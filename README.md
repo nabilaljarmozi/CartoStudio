@@ -163,9 +163,11 @@ are written to `localStorage` on every change and restored on reload. The design
 and the uploads live under separate keys, so dragging a colour picker rewrites a
 couple of KB rather than re-serialising a boundary file.
 
-Opening a shared map replaces what is on screen but does not overwrite your
-stored workspace until you edit something. Use *Save project* for anything you
-need to keep.
+A map that arrived from someone else — an embed URL or a standalone file opened
+with `?edit=1` — is never written to this browser. Editing it says so once and
+leaves whatever you had stored untouched; **Project → Keep this map in my
+workspace** adopts it when you actually want it. A design-only link is treated
+as your own map restyled, so that one does persist.
 
 ## Sharing a map
 
@@ -182,13 +184,14 @@ mode. Paste the snippet into any page that accepts HTML:
 
 ```html
 <iframe src="https://admincartomap.netlify.app/?embed=1#m=…"
-        style="width:100%;height:100%;border:0"
+        style="width:100%;height:100%;min-height:420px;border:0"
         title="Map made with CartoStudio" loading="lazy"></iframe>
 ```
 
 The map fills whatever box you put it in, so **give the parent element a
-height** — `height:100%` has nothing to resolve against otherwise. A `<div>`
-with `height:520px`, or an aspect-ratio wrapper, both work.
+height** — `height:100%` has nothing to resolve against otherwise, and the
+embed drops to its 420px minimum. A `<div>` with `height:520px`, or an
+aspect-ratio wrapper, both work.
 
 Zoom, pan, drill and tooltips all keep working inside the embed. It is stateless
 by design: it never reads or writes `localStorage`, so putting one on a page
@@ -205,14 +208,16 @@ constraint; a simplified country layer usually fits, a detailed one will not.
 One `.html` containing the app and your map together — the app's own source
 with the project baked in as a script that runs before it boots. No size limit,
 so this is the route for boundaries too large for a URL. Email it, or drop it on
-any static host and it is a public map on its own.
+any static host and it is a public map on its own. It still fetches the map
+libraries from a CDN on open, so the recipient needs to be online.
 
 Building one needs the app served over `http(s)`; a page opened from `file://`
 cannot read its own source, so use the hosted copy for this.
 
 Add `?edit=1` to a standalone file's URL to open the full editor on it. That is
 deliberately undocumented in the UI — the point of the file is the map — but it
-means a shared map is never a dead end.
+means a shared map is never a dead end. Editing someone else's map this way does
+not overwrite your own stored workspace; see *Saving your work* above.
 
 ### Project file
 

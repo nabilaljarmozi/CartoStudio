@@ -261,6 +261,7 @@ body.view-only #canvasWrap{background:none}
         <label class="mi">Open project (.json)<input type="file" accept=".json,application/json" id="fileProject" hidden></label>
         <div class="sep"></div>
         <button data-act="share">Share / embed…</button>
+        <button data-act="adopt" id="miAdopt" hidden>Keep this map in my workspace</button>
         <button data-act="theme">Apply preset theme…</button>
         <div class="sep"></div>
         <button data-act="reset-fmt">Reset formatting to defaults</button>
@@ -2198,6 +2199,7 @@ function render() {
     for (const k of ['glow', 'adm2', 'adm1', 'bubble', 'glyph', 'adm2Label', 'adm1Label', 'scaleBar', 'legend', 'pill']) clear(L[k]);
     clear(overlay);
     state.last = null;
+    refreshChromeState();
     return;
   }
 
@@ -2442,10 +2444,23 @@ function render() {
   /* ---- chrome + interaction -------------------------------------------- */
   applyZoom();
   renderChrome(view);
+  refreshChromeState();
   wireInteraction(adm1Nodes, adm2Nodes, view, adm1Level, areas);
 
   state.last = { projection, view, areas, adm1Level, legendInputs };
   refreshJoinStatus();
+}
+
+/** Top-bar affordances that depend on what is loaded. */
+function refreshChromeState() {
+  if (VIEW_ONLY) return;
+  const share = $('#btnShare');
+  if (share) {
+    share.disabled = !hasGeometry();
+    share.title = hasGeometry() ? 'Share or embed this map' : 'Upload geometry first';
+  }
+  const adopt = $('#miAdopt');
+  if (adopt) adopt.hidden = !foreignProject;
 }
 
 /** Values legend payload — one `#` row per active label-value source. */
@@ -3512,8 +3527,31 @@ function savePayload() {
 }
 
 /** Design on every change; uploads only when the uploads themselves change. */
+/* A project that arrived from a link or a baked standalone belongs to whoever
+ * sent it. Editing it must not quietly replace whatever this browser already
+ * had stored — the recipient never chose to give that up. `?edit=1` reopens the
+ * editor but does not change who the map belongs to, so the guard cannot be
+ * keyed on VIEW_ONLY alone. "Keep this map" in the Project menu adopts it. */
+let foreignProject = false;
+let foreignWarned = false;
+
+function adoptForeignProject() {
+  foreignProject = false;
+  $('#miAdopt').hidden = true;
+  saveLocal(true);
+  toast('Saved to this browser — it will be here when you come back');
+}
+
 function saveLocal(withPayload = false) {
   if (VIEW_ONLY) return;   // a shared map is a view, not a workspace
+  if (foreignProject) {
+    if (!foreignWarned) {
+      foreignWarned = true;
+      toast('Editing a shared map — changes are not saved to this browser. ' +
+        'Project → Keep this map, or Save project, to hold on to them.');
+    }
+    return;
+  }
   saveDesign();
   if (withPayload) savePayload();
 }
@@ -3530,9 +3568,8 @@ function loadLocal() {
 
 /* ================================================== sharing / embedding ==== */
 /* No server exists to upload a map to, so a shared map has to carry itself.
- * Three routes, in ascending order of how much they can hold:
- *   link      — the whole project gzipped into the URL hash
- *   embed     — that link inside an <iframe>, with the app chrome hidden
+ * Two routes, in ascending order of how much they can hold:
+ *   embed     — the whole project gzipped into an <iframe> src, chrome hidden
  *   standalone— the app's own source with the project baked in as one .html
  */
 
@@ -3577,9 +3614,10 @@ async function unpackState(packed) {
  *  older formats, still read so links already shared keep working). */
 async function buildShareUrl() {
   const packed = await packState(projectPayload(true));
-  // A file:// page has no origin a recipient could open, so point those links
-  // at the hosted copy instead — the payload travels either way.
-  const base = location.protocol === 'file:'
+  // A file:// page has no origin a recipient could open, and a standalone file
+  // ignores the hash in favour of its own baked project — so both point at the
+  // hosted copy instead; the payload travels either way.
+  const base = (location.protocol === 'file:' || window.__CARTOSTUDIO_MAP__)
     ? APP.site : `${location.origin}${location.pathname}`;
   return `${base}?embed=1#m=${packed}`;
 }
@@ -3591,6 +3629,7 @@ async function loadFromHash() {
     const [, kind, packed] = m;
     const payload = kind === 's' ? JSON.parse(b64decode(packed)) : await unpackState(packed);
     applyPayload(payload, { withGeometry: kind === 'm' });
+    if (kind === 'm') foreignProject = true;
     return true;
   } catch (e) {
     toast('That shared link could not be read — it may have been truncated in transit.', true);
@@ -3622,7 +3661,9 @@ async function buildStandaloneHtml() {
   // module, so both are set by the time the app boots.
   const inject = `<script>window.__CARTOSTUDIO_MAP__=${json};window.__CARTOSTUDIO_VIEW__=true;</`
     + `script>\n`;
-  return src.replace(marker, inject + marker);
+  // Function replacer, not a string: `$&`, `$'` and `$$` inside the project
+  // data would otherwise be expanded by String.replace and corrupt the payload.
+  return src.replace(marker, () => inject + marker);
 }
 
 /* View-only strips the app down to the map: no top bar, no panels, nothing to
@@ -3659,6 +3700,10 @@ function shareSizeNote(chars) {
 }
 
 function openShareModal() {
+  if (!hasGeometry()) {
+    toast('Nothing to share yet — upload geometry first', true);
+    return;
+  }
   const embedOut = el('textarea', { class: 'share-out', rows: 5, readonly: true });
   const meta = el('div', { class: 'share-meta' }, el('span', { class: 'bar' }, el('i')), el('span'));
 
@@ -3666,7 +3711,7 @@ function openShareModal() {
   const refresh = async () => {
     url = await buildShareUrl();
     embedOut.value =
-      `<iframe src="${url}"\n        style="width:100%;height:100%;border:0"\n` +
+      `<iframe src="${url}"\n        style="width:100%;height:100%;min-height:420px;border:0"\n` +
       `        title="Map made with CartoStudio" loading="lazy"></iframe>`;
     // The payload rides in the iframe src, so URL length limits apply here too.
     const note = shareSizeNote(url.length);
@@ -3693,14 +3738,15 @@ function openShareModal() {
       onclick: () => copyToClipboard(embedOut.value, 'Embed code copied') }),
     el('p', { class: 'hint', html: 'Paste into any page that accepts HTML. The map fills whatever box ' +
       'you put it in, so give the parent element a height — <code>height:100%</code> has nothing to ' +
-      'resolve against otherwise.' }),
+      'resolve against otherwise, and the embed falls back to its 420px minimum.' }),
     el('p', { class: 'hint', html: 'The embedded map carries itself: nothing is uploaded, and it opens ' +
       'straight into the map with no editing chrome. Zoom, pan, drill and tooltips all work.' }));
 
   const standalonePane = el('div', { class: 'share-pane' },
     el('p', { class: 'hint', html: 'One <code>.html</code> file with the app and your map inside it. ' +
       'It opens straight into the finished map — no panels, no editing chrome. No size limit either, ' +
-      'so this is the route for boundaries too large for a URL: email it, or host it as a public map.' }),
+      'so this is the route for boundaries too large for a URL: email it, or host it as a public map. ' +
+      'It still pulls the map libraries from a CDN, so the recipient needs to be online.' }),
     el('button', { class: 'tb-btn primary', text: 'Download standalone .html', onclick: async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;
@@ -3778,6 +3824,7 @@ function wireUi() {
   wireMenu('btnProject', 'menuProject', (act) => {
     if (act === 'save-json') saveProjectFile();
     if (act === 'share') openShareModal();
+    if (act === 'adopt') adoptForeignProject();
     if (act === 'theme') {
       const list = el('div');
       for (const name of Object.keys(THEMES)) {
@@ -3841,7 +3888,7 @@ async function boot() {
   // then whatever this browser last had open. A link carrying only the design
   // layers on top of the local geometry rather than replacing it.
   const baked = window.__CARTOSTUDIO_MAP__;
-  if (baked) applyPayload(baked);
+  if (baked) { applyPayload(baked); foreignProject = true; }
   else if (VIEW_ONLY) await loadFromHash();    // stateless: never touch the visitor's workspace
   else { loadLocal(); await loadFromHash(); }
   applyViewMode();
