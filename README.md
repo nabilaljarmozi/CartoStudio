@@ -158,13 +158,69 @@ scale bar snaps to round distances and dodges whichever legend shares its corner
 
 ## Saving your work
 
-- Settings, bindings and (when they fit the browser's quota) the uploaded files
-  are written to `localStorage` on every change and restored on reload.
-- **Project → Save project** writes one `.json` containing geometry, data and
-  formatting. **Open project** restores it anywhere.
-- **Project → Copy shareable link** puts the formatting, bindings and field
-  mapping in the URL hash. It does **not** carry geometry or data — the
-  recipient needs their own copy of the files, or the project `.json`.
+Settings, bindings and — when they fit the browser's quota — the uploaded files
+are written to `localStorage` on every change and restored on reload. The design
+and the uploads live under separate keys, so dragging a colour picker rewrites a
+couple of KB rather than re-serialising a boundary file.
+
+Opening a shared map replaces what is on screen but does not overwrite your
+stored workspace until you edit something. Use *Save project* for anything you
+need to keep.
+
+## Sharing a map
+
+There is no server behind CartoStudio, so nothing is ever uploaded — a shared
+map has to carry itself. **Share** in the top bar offers three ways to do that,
+in ascending order of how much they hold.
+
+### Link
+
+The whole project — geometry, data and formatting — gzipped into the URL hash.
+Anyone who opens the link sees your map without needing your files. Pick
+*Design only* instead to share just the styling, for someone who already has
+the same boundaries.
+
+The dialog reports the link's size as you build it, because URLs have practical
+limits that vary by where you paste them:
+
+| Size | Where it survives |
+| --- | --- |
+| under 8 KB | anywhere — chat, email, a document |
+| 8–32 KB | browsers and documents; some chat apps shorten links this long |
+| over 32 KB | browsers only — use the standalone file instead |
+
+Compression does most of the work: the sample project is 8.4 KB of JSON and
+2.6 KB as a link. Real boundary files are the constraint, not the data — a
+simplified country layer usually fits, a detailed one will not.
+
+A truncated link fails with a message rather than a blank map.
+
+### Embed
+
+The same link inside an `<iframe>`, with `?embed=1` added. Embed mode hides the
+top bar and the side panel and shows a small attribution badge; zoom, pan,
+drill and tooltips all keep working. Set the width and height in the dialog and
+paste the snippet into any page that accepts HTML.
+
+An embedded map is stateless by design: it never reads or writes `localStorage`,
+so putting one on a page cannot disturb the viewer's own workspace.
+
+### Standalone file
+
+One `.html` containing the app and your map together — the app's own source
+with the project baked in. No size limit, so this is the route for boundaries
+too large for a URL. Email it, or drop it on any static host and it is a public
+map on its own. It still fetches the map libraries from a CDN on open.
+
+Building one requires the app to be served over `http(s)`; a page opened from
+`file://` cannot read its own source, so use the hosted copy for this.
+
+### Project file
+
+**Project → Save project** writes a `.json` with geometry, data and formatting.
+Unlike the routes above this is a working file, not a published artefact — use
+it to move a map between machines or to hand the editable version to a
+colleague.
 
 ## Known limits
 
@@ -184,6 +240,12 @@ scale bar snaps to round distances and dodges whichever legend shares its corner
 - **Point and line geometry is ignored** — only `Polygon` and `MultiPolygon`
   features are kept.
 - **No cross-filtering.** This is one map, not a dashboard.
+- **Sharing has no server**, so there is no map gallery, no short URL and no
+  "unshare". A link or a standalone file is a copy: once sent, it stays valid
+  and cannot be revoked or updated in place.
+- **Compressed links need `CompressionStream`** (Chrome 80+, Firefox 113+,
+  Safari 16.4+). Older browsers fall back to uncompressed base64, which is
+  roughly ten times longer.
 
 ## Author
 
