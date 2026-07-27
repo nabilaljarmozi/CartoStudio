@@ -1,6 +1,6 @@
 # CartoStudio
 
-**by Nabil ALJARMOZI** · [nabilmg@gmail.com](mailto:nabilmg@gmail.com)
+**by Nabil ALJARMOZI** · [LinkedIn](https://www.linkedin.com/in/nabilaljarmozi/)
 
 A design-time cartography tool in a single HTML file. Upload your own boundaries,
 upload your own table, join the two, style the result through a Power BI–style
@@ -180,7 +180,7 @@ scale bar snaps to round distances and dodges whichever legend shares its corner
 
 ## Author
 
-**Nabil ALJARMOZI** — [nabilmg@gmail.com](mailto:nabilmg@gmail.com)
+**Nabil ALJARMOZI** — [linkedin.com/in/nabilaljarmozi](https://www.linkedin.com/in/nabilaljarmozi/)
 
 Card 17 of the formatting pane carries the same details in-app. Exports are
 attributed too: the SVG gets a `<title>` and `<desc>`, and the PDF gets document

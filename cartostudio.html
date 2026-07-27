@@ -289,7 +289,8 @@ table.mini th{color:var(--ink-2);font-weight:600}
                CartoStudio ships with no boundaries — every layer comes from your uploads.</p>
           </div>
           <p class="credit">CartoStudio — by <b>Nabil ALJARMOZI</b> ·
-            <a href="mailto:nabilmg@gmail.com">nabilmg@gmail.com</a></p>
+            <a href="https://www.linkedin.com/in/nabilaljarmozi/" target="_blank"
+               rel="noreferrer noopener">LinkedIn</a></p>
         </div>
         <div id="toast"></div>
       </div>
@@ -476,7 +477,7 @@ const APP = {
   name: 'CartoStudio',
   version: '1.0.0',
   author: 'Nabil ALJARMOZI',
-  email: 'nabilmg@gmail.com',
+  linkedin: 'https://www.linkedin.com/in/nabilaljarmozi/',
   repo: 'github.com/nabilaljarmozi/CartoStudio',
   basedOn: 'github.com/nabilaljarmozi/AdminCartograph'
 };
@@ -701,7 +702,7 @@ const CARDS = [
     { k: 'appName', t: 'Name', type: 'info', d: APP.name },
     { k: 'appVersion', t: 'Version', type: 'info', d: APP.version },
     { k: 'appAuthor', t: 'Author', type: 'info', d: APP.author },
-    { k: 'appEmail', t: 'Contact', type: 'info', d: APP.email, href: `mailto:${APP.email}` },
+    { k: 'appLinkedIn', t: 'LinkedIn', type: 'info', d: 'linkedin.com/in/nabilaljarmozi', href: APP.linkedin },
     { k: 'appRepo', t: 'Source', type: 'info', d: APP.repo, href: `https://${APP.repo}` },
     { k: 'appBasis', t: 'Algorithms from', type: 'info', d: 'AdminCartograph', href: `https://${APP.basedOn}` }
   ] }
@@ -3253,7 +3254,7 @@ function buildExportSvg() {
   const title = sel('title');
   title.textContent = state.geom.adm1Name ? `${APP.name} — ${state.geom.adm1Name}` : APP.name;
   const desc = sel('desc');
-  desc.textContent = `Made with ${APP.name} ${APP.version} by ${APP.author} <${APP.email}> — https://${APP.repo}`;
+  desc.textContent = `Made with ${APP.name} ${APP.version} by ${APP.author} — ${APP.linkedin}`;
   clone.insertBefore(desc, clone.firstChild);
   clone.insertBefore(title, clone.firstChild);
 
