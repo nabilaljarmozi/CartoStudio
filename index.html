@@ -221,9 +221,9 @@ table.mini th{color:var(--ink-2);font-weight:600}
 .share-tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
 .share-pane{display:none} .share-pane.on{display:block}
 
-/* embed mode — the app becomes just the map */
-body.embed #topbar,body.embed #side{display:none}
-body.embed #canvasWrap{background:none}
+/* view-only mode — embeds and standalone files: the app is just the map */
+body.view-only #topbar,body.view-only #side{display:none}
+body.view-only #canvasWrap{background:none}
 .embed-credit{position:absolute;right:8px;bottom:6px;font-size:10.5px;background:rgba(255,255,255,.86);
   border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--ink-2);text-decoration:none;
   z-index:20;line-height:1.5}
@@ -2398,8 +2398,8 @@ function render() {
   // Corners that are already spoken for, so legends can shift clear of them.
   const dodge = {};
   if (sbFootprint) dodge[sbFootprint.position] = { height: sbFootprint.height };
-  // The embed credit badge sits bottom-right and would otherwise clip a legend.
-  if (EMBED_MODE) dodge.bottomRight = { height: (dodge.bottomRight?.height || 0) + 22 };
+  // The attribution badge sits bottom-right and would otherwise clip a legend.
+  if (VIEW_ONLY) dodge.bottomRight = { height: (dodge.bottomRight?.height || 0) + 22 };
   const sbByCorner = Object.keys(dodge).length ? dodge : undefined;
 
   let valueClasses = cs.classification === 'categorical'
@@ -2867,6 +2867,7 @@ function mapRow(label, options, current, onChange) {
 }
 
 function buildDataPanel() {
+  if (VIEW_ONLY) return;   // no panels to build — the map is the whole page
   const panel = clear($('#panelData'));
   const g = state.geom;
 
@@ -3074,6 +3075,7 @@ function setSetting(cardKey, key, value, withUndo = true) {
 const openCards = new Set(['general', 'choropleth']);
 
 function buildFormatPanel() {
+  if (VIEW_ONLY) return;
   const panel = clear($('#panelFormat'));
   if (!hasGeometry()) {
     panel.appendChild(el('div', { class: 'hint', text: 'Upload geometry first — the formatting cards style what is on the map.' }));
@@ -3511,7 +3513,7 @@ function savePayload() {
 
 /** Design on every change; uploads only when the uploads themselves change. */
 function saveLocal(withPayload = false) {
-  if (EMBED_MODE) return;   // an embedded map is a view, not a workspace
+  if (VIEW_ONLY) return;   // a shared map is a view, not a workspace
   saveDesign();
   if (withPayload) savePayload();
 }
@@ -3570,17 +3572,16 @@ async function unpackState(packed) {
   return JSON.parse(b64decode(packed.slice(1)));
 }
 
-const designPayload = () => ({ version: 1, settings: state.settings,
-  mapping: state.geom.mapping, roles: state.data.roles });
-
-/** `#d=` design only · `#m=` full map · `#s=` the pre-compression format. */
-async function buildShareUrl(includeData) {
-  const packed = await packState(includeData ? projectPayload(true) : designPayload());
+/** The embed carries the whole project in its iframe src — nothing is uploaded,
+ *  so the URL is the transport. `#m=` full map (`#d=` design-only and `#s=` are
+ *  older formats, still read so links already shared keep working). */
+async function buildShareUrl() {
+  const packed = await packState(projectPayload(true));
   // A file:// page has no origin a recipient could open, so point those links
   // at the hosted copy instead — the payload travels either way.
   const base = location.protocol === 'file:'
     ? APP.site : `${location.origin}${location.pathname}`;
-  return { url: `${base}#${includeData ? 'm' : 'd'}=${packed}`, base, packed };
+  return `${base}?embed=1#m=${packed}`;
 }
 
 async function loadFromHash() {
@@ -3616,14 +3617,26 @@ async function buildStandaloneHtml() {
   // the injected tag early. (This comment avoids writing that sequence out for
   // the same reason: the HTML parser ends the element wherever it appears.)
   const json = JSON.stringify(projectPayload(true)).replace(/</g, '\\u003c');
-  return src.replace(marker, `<script>window.__CARTOSTUDIO_MAP__=${json};</` + `script>\n${marker}`);
+  // __CARTOSTUDIO_VIEW__ makes the file open as a finished map rather than as
+  // the editor with a project loaded. A classic script runs before the deferred
+  // module, so both are set by the time the app boots.
+  const inject = `<script>window.__CARTOSTUDIO_MAP__=${json};window.__CARTOSTUDIO_VIEW__=true;</`
+    + `script>\n`;
+  return src.replace(marker, inject + marker);
 }
 
-const EMBED_MODE = new URLSearchParams(location.search).get('embed') === '1';
+/* View-only strips the app down to the map: no top bar, no panels, nothing to
+ * build before the first paint. Set by ?embed=1 on an iframe src, or baked into
+ * a standalone file. `?edit=1` reopens the full editor on either. */
+const VIEW_ONLY = (() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('edit') === '1') return false;
+  return q.get('embed') === '1' || window.__CARTOSTUDIO_VIEW__ === true;
+})();
 
-function applyEmbedMode() {
-  if (!EMBED_MODE) return;
-  document.body.classList.add('embed');
+function applyViewMode() {
+  if (!VIEW_ONLY) return;
+  document.body.classList.add('view-only');
   $('#canvasWrap').appendChild(el('a', { class: 'embed-credit', href: APP.site,
     target: '_blank', rel: 'noreferrer noopener', text: 'Made with CartoStudio' }));
 }
@@ -3646,33 +3659,21 @@ function shareSizeNote(chars) {
 }
 
 function openShareModal() {
-  const hasData = hasGeometry();
-  const includeBox = selectEl(
-    [['map', 'Everything — geometry, data and design'], ['design', 'Design only — no geometry or data']],
-    hasData ? 'map' : 'design', () => refresh(), { allowNone: false });
-  const linkOut = el('textarea', { class: 'share-out', rows: 4, readonly: true });
+  const embedOut = el('textarea', { class: 'share-out', rows: 5, readonly: true });
   const meta = el('div', { class: 'share-meta' }, el('span', { class: 'bar' }, el('i')), el('span'));
-  const embedOut = el('textarea', { class: 'share-out', rows: 4, readonly: true });
-  const w = el('input', { type: 'number', value: 800, min: 200, step: 20 });
-  const h = el('input', { type: 'number', value: 520, min: 150, step: 20 });
 
-  let currentUrl = '';
+  let url = '';
   const refresh = async () => {
-    const includeData = includeBox.value === 'map';
-    const { url } = await buildShareUrl(includeData);
-    currentUrl = url;
-    linkOut.value = url;
+    url = await buildShareUrl();
+    embedOut.value =
+      `<iframe src="${url}"\n        style="width:100%;height:100%;border:0"\n` +
+      `        title="Map made with CartoStudio" loading="lazy"></iframe>`;
+    // The payload rides in the iframe src, so URL length limits apply here too.
     const note = shareSizeNote(url.length);
     meta.className = `share-meta ${note.cls}`;
     meta.querySelector('i').style.width = `${Math.min(100, note.pct)}%`;
     meta.querySelector('span:last-child').textContent = note.text;
-    const [base, hash] = url.split('#');
-    embedOut.value = `<iframe src="${base}?embed=1#${hash}"\n        width="${w.value}" height="${h.value}"\n` +
-      `        style="border:1px solid #dde1e8;border-radius:8px" loading="lazy"\n` +
-      `        title="Map made with CartoStudio"></iframe>`;
   };
-  w.addEventListener('input', refresh);
-  h.addEventListener('input', refresh);
 
   const tabs = el('div', { class: 'share-tabs' });
   const panes = [];
@@ -3686,28 +3687,20 @@ function openShareModal() {
     panes.push(pane);
   };
 
-  const linkPane = el('div', { class: 'share-pane' },
-    el('div', { class: 'sub', text: 'Include' }), includeBox,
-    el('div', { style: 'height:10px' }),
-    linkOut, meta,
-    el('button', { class: 'tb-btn primary', text: 'Copy link',
-      onclick: () => copyToClipboard(currentUrl, 'Link copied') }),
-    el('p', { class: 'hint', html: 'The link carries the map itself — nothing is uploaded anywhere. ' +
-      'Anyone who opens it sees your map without needing your files.' }));
-
   const embedPane = el('div', { class: 'share-pane' },
-    el('div', { class: 'row' }, el('label', { text: 'Width (px)' }), el('div', { class: 'ctl' }, w)),
-    el('div', { class: 'row' }, el('label', { text: 'Height (px)' }), el('div', { class: 'ctl' }, h)),
-    embedOut,
+    embedOut, meta,
     el('button', { class: 'tb-btn primary', text: 'Copy embed code',
       onclick: () => copyToClipboard(embedOut.value, 'Embed code copied') }),
-    el('p', { class: 'hint', html: 'Paste into any page that accepts HTML. The embedded map hides the ' +
-      'editing chrome and keeps zoom, pan, drill and tooltips.' }));
+    el('p', { class: 'hint', html: 'Paste into any page that accepts HTML. The map fills whatever box ' +
+      'you put it in, so give the parent element a height — <code>height:100%</code> has nothing to ' +
+      'resolve against otherwise.' }),
+    el('p', { class: 'hint', html: 'The embedded map carries itself: nothing is uploaded, and it opens ' +
+      'straight into the map with no editing chrome. Zoom, pan, drill and tooltips all work.' }));
 
   const standalonePane = el('div', { class: 'share-pane' },
     el('p', { class: 'hint', html: 'One <code>.html</code> file with the app and your map inside it. ' +
-      'No size limit, works offline apart from the map libraries, and can be emailed or hosted as-is — ' +
-      'the right choice for boundaries too large for a URL.' }),
+      'It opens straight into the finished map — no panels, no editing chrome. No size limit either, ' +
+      'so this is the route for boundaries too large for a URL: email it, or host it as a public map.' }),
     el('button', { class: 'tb-btn primary', text: 'Download standalone .html', onclick: async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;
@@ -3717,13 +3710,14 @@ function openShareModal() {
         toast(`Standalone file downloaded (${(html.length / 1024 / 1024).toFixed(1)} MB)`);
       } catch (err) { toast(err.message, true); }
       btn.disabled = false;
-    } }));
+    } }),
+    el('p', { class: 'hint', text: 'Needs the app served over http(s) — a page opened from file:// '
+      + 'cannot read its own source.' }));
 
-  mkTab('Link', linkPane, true);
-  mkTab('Embed', embedPane, false);
+  mkTab('Embed', embedPane, true);
   mkTab('Standalone file', standalonePane, false);
 
-  openModal('Share this map', [tabs, linkPane, embedPane, standalonePane], [['Close', closeModal, false]]);
+  openModal('Share this map', [tabs, embedPane, standalonePane], [['Close', closeModal, false]]);
   refresh();
 }
 
@@ -3848,9 +3842,9 @@ async function boot() {
   // layers on top of the local geometry rather than replacing it.
   const baked = window.__CARTOSTUDIO_MAP__;
   if (baked) applyPayload(baked);
-  else if (EMBED_MODE) await loadFromHash();   // stateless: never touch the visitor's workspace
+  else if (VIEW_ONLY) await loadFromHash();    // stateless: never touch the visitor's workspace
   else { loadLocal(); await loadFromHash(); }
-  applyEmbedMode();
+  applyViewMode();
   wireUi();
   wireCanvasGestures();
   buildDataPanel();
