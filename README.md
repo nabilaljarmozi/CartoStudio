@@ -1,5 +1,7 @@
 # CartoStudio
 
+**by Nabil ALJARMOZI** · [nabilmg@gmail.com](mailto:nabilmg@gmail.com)
+
 A design-time cartography tool in a single HTML file. Upload your own boundaries,
 upload your own table, join the two, style the result through a Power BI–style
 formatting pane, drill between admin levels, and export print-ready SVG / PNG / PDF.
@@ -28,7 +30,8 @@ of the map.
    *"All 8 rows matched the geometry."*
 4. Click any polygon to drill into its parent Admin 1. `Esc`, or the home button
    in the top-left of the canvas, takes you back.
-5. Open the **Format** tab and work down the sixteen numbered cards.
+5. Open the **Format** tab and work down the sixteen numbered cards. Every
+   control updates the map as you drag it; a whole drag is one undo step.
 6. **Export → Download PDF** with "Add legend page" ticked.
 
 `examples/terrafirma-admin1.topojson` is the same Admin 1 layer as a TopoJSON
@@ -174,6 +177,14 @@ scale bar snaps to round distances and dodges whichever legend shares its corner
 - **Point and line geometry is ignored** — only `Polygon` and `MultiPolygon`
   features are kept.
 - **No cross-filtering.** This is one map, not a dashboard.
+
+## Author
+
+**Nabil ALJARMOZI** — [nabilmg@gmail.com](mailto:nabilmg@gmail.com)
+
+Card 17 of the formatting pane carries the same details in-app. Exports are
+attributed too: the SVG gets a `<title>` and `<desc>`, and the PDF gets document
+properties plus a footer line on the legend page.
 
 ## Provenance
 
