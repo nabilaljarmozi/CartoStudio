@@ -478,6 +478,7 @@ const APP = {
   version: '1.0.0',
   author: 'Nabil ALJARMOZI',
   linkedin: 'https://www.linkedin.com/in/nabilaljarmozi/',
+  site: 'https://admincartomap.netlify.app/',
   repo: 'github.com/nabilaljarmozi/CartoStudio',
   basedOn: 'github.com/nabilaljarmozi/AdminCartograph'
 };
@@ -701,6 +702,7 @@ const CARDS = [
   { key: 'about', title: 'About', slices: [
     { k: 'appName', t: 'Name', type: 'info', d: APP.name },
     { k: 'appVersion', t: 'Version', type: 'info', d: APP.version },
+    { k: 'appSite', t: 'Live app', type: 'info', d: 'admincartomap.netlify.app', href: APP.site },
     { k: 'appAuthor', t: 'Author', type: 'info', d: APP.author },
     { k: 'appLinkedIn', t: 'LinkedIn', type: 'info', d: 'linkedin.com/in/nabilaljarmozi', href: APP.linkedin },
     { k: 'appRepo', t: 'Source', type: 'info', d: APP.repo, href: `https://${APP.repo}` },
@@ -3254,7 +3256,7 @@ function buildExportSvg() {
   const title = sel('title');
   title.textContent = state.geom.adm1Name ? `${APP.name} — ${state.geom.adm1Name}` : APP.name;
   const desc = sel('desc');
-  desc.textContent = `Made with ${APP.name} ${APP.version} by ${APP.author} — ${APP.linkedin}`;
+  desc.textContent = `Made with ${APP.name} ${APP.version} (${APP.site}) by ${APP.author} — ${APP.linkedin}`;
   clone.insertBefore(desc, clone.firstChild);
   clone.insertBefore(title, clone.firstChild);
 

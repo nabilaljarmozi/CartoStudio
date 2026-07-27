@@ -1,5 +1,7 @@
 # CartoStudio
 
+**Live app: [admincartomap.netlify.app](https://admincartomap.netlify.app/)**
+
 **by Nabil ALJARMOZI** · [LinkedIn](https://www.linkedin.com/in/nabilaljarmozi/)
 
 A design-time cartography tool in a single HTML file. Upload your own boundaries,
@@ -11,10 +13,13 @@ upload.
 
 ## Open it
 
-Double-click `index.html`, or host it anywhere static — GitHub Pages, Netlify,
+Use the hosted copy at **[admincartomap.netlify.app](https://admincartomap.netlify.app/)**,
+or download `index.html` and double-click it — the two behave identically, since
+nothing is stored server-side.
+
+To host your own: drop `index.html` on any static host — Netlify, GitHub Pages,
 S3, a shared drive. There is no build step, no server, no account. Because the
-file is named `index.html`, a host serves it at the bare URL: push this repo to
-GitHub Pages and `https://<user>.github.io/CartoStudio/` opens the app.
+file is named `index.html`, a host serves it at the bare URL.
 
 The page pulls five small libraries from a CDN on first load — `d3-geo`,
 `d3-polygon`, `topojson-client`, `polylabel` and `papaparse` — plus `xlsx` and
