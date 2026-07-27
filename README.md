@@ -11,8 +11,10 @@ upload.
 
 ## Open it
 
-Double-click `cartostudio.html`, or host it anywhere static — GitHub Pages,
-Netlify, S3, a shared drive. There is no build step, no server, no account.
+Double-click `index.html`, or host it anywhere static — GitHub Pages, Netlify,
+S3, a shared drive. There is no build step, no server, no account. Because the
+file is named `index.html`, a host serves it at the bare URL: push this repo to
+GitHub Pages and `https://<user>.github.io/CartoStudio/` opens the app.
 
 The page pulls five small libraries from a CDN on first load — `d3-geo`,
 `d3-polygon`, `topojson-client`, `polylabel` and `papaparse` — plus `xlsx` and
