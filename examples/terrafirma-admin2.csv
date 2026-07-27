@@ -1,0 +1,9 @@
+adm1_pcode,adm2_pcode,district_name,population,incidents,severity
+TF01,TF0101,North Norvale,210000,70,High
+TF01,TF0102,South Norvale,208000,62,High
+TF02,TF0201,Upper Estmarch,140000,25,Medium
+TF02,TF0202,Lower Estmarch,125000,22,Low
+TF03,TF0301,West Sudlund,505000,170,Severe
+TF03,TF0302,East Sudlund,407000,138,Severe
+TF04,TF0401,Inner Vaskaria,80000,7,Low
+TF04,TF0402,Outer Vaskaria,74000,5,Low

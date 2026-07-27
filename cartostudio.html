@@ -1,0 +1,3575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CartoStudio</title>
+<style>
+/* ============================================================================
+   CartoStudio — single-file design-time cartography tool.
+   All styling lives here; the map itself is styled through inline SVG
+   attributes so the export pipeline stays faithful without a stylesheet.
+   ========================================================================== */
+:root{
+  --bg:#eef0f4; --panel:#ffffff; --panel-2:#f7f8fa; --ink:#1d2129; --ink-2:#5a6472;
+  --line:#dde1e8; --accent:#2f6fed; --accent-soft:#e8eefc; --danger:#c0392b;
+  --ok:#1e8f5a; --warn:#b7791f; --radius:7px;
+  --side-w:340px; --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:13px/1.45 var(--font);color:var(--ink);background:var(--bg);overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+h1,h2,h3,h4{margin:0;font-weight:600}
+
+#app{display:flex;flex-direction:column;height:100%}
+
+/* ---- top bar --------------------------------------------------------- */
+#topbar{display:flex;align-items:center;gap:10px;height:46px;padding:0 12px;
+  background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto;z-index:40}
+#topbar .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.2px}
+#topbar .brand svg{display:block}
+#topbar .brand small{font-weight:400;color:var(--ink-2);letter-spacing:0}
+#topbar .spacer{flex:1}
+.tb-btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--line);
+  background:var(--panel);border-radius:var(--radius);white-space:nowrap}
+.tb-btn:hover{background:var(--panel-2)}
+.tb-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.tb-btn.primary:hover{filter:brightness(1.07)}
+.tb-btn[disabled]{opacity:.45;cursor:not-allowed}
+.menu-wrap{position:relative}
+.menu{position:absolute;right:0;top:34px;min-width:230px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:0 8px 28px rgba(20,30,50,.16);padding:6px;display:none;z-index:60}
+.menu.open{display:block}
+.menu button, .menu label.mi{display:flex;width:100%;align-items:center;gap:8px;padding:7px 9px;border:0;background:none;
+  border-radius:5px;text-align:left}
+.menu button:hover,.menu label.mi:hover{background:var(--accent-soft)}
+.menu .sep{height:1px;background:var(--line);margin:5px 2px}
+.menu .grp{padding:6px 9px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-2)}
+.menu .row{display:flex;gap:6px;padding:4px 9px 8px;align-items:center}
+.menu .row select,.menu .row input{flex:1;min-width:0}
+
+/* ---- layout ---------------------------------------------------------- */
+#body{flex:1;display:flex;min-height:0}
+#stage{flex:1;min-width:0;position:relative;display:flex;flex-direction:column}
+#canvasWrap{flex:1;position:relative;overflow:hidden;background:
+  linear-gradient(45deg,#e6e9ef 25%,transparent 25%,transparent 75%,#e6e9ef 75%),
+  linear-gradient(45deg,#e6e9ef 25%,transparent 25%,transparent 75%,#e6e9ef 75%);
+  background-size:18px 18px;background-position:0 0,9px 9px;background-color:#f2f4f7}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#overlay{position:absolute;inset:0;pointer-events:none}
+#overlay > *{pointer-events:auto}
+
+/* empty state */
+#empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;
+  gap:14px;text-align:center;color:var(--ink-2);padding:24px}
+#empty h2{font-size:19px;color:var(--ink)}
+#empty p{max-width:430px;margin:0}
+#empty .drop{border:2px dashed var(--line);border-radius:12px;padding:26px 32px;background:rgba(255,255,255,.72)}
+#canvasWrap.dragover .drop{border-color:var(--accent);background:var(--accent-soft)}
+
+/* drill / nav bar on canvas */
+.cs-topbar-map{position:absolute;left:12px;top:12px;display:flex;gap:6px;align-items:center;
+  background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:var(--radius);
+  padding:4px;box-shadow:0 2px 8px rgba(20,30,50,.1)}
+.cs-topbar-map button{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border:0;
+  background:none;border-radius:5px}
+.cs-topbar-map button:hover:not([disabled]){background:var(--accent-soft)}
+.cs-topbar-map button[disabled]{opacity:.35;cursor:default}
+.cs-topbar-map .title{padding:0 8px 0 4px;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-topbar-map.small button{height:22px;padding:0 5px}
+.cs-topbar-map.small .title{font-size:12px;max-width:120px}
+
+/* zoom cluster */
+.cs-controls{position:absolute;display:flex;flex-direction:column;gap:4px}
+.cs-controls[data-pos="topRight"]{right:12px;top:12px}
+.cs-controls[data-pos="topLeft"]{left:12px;top:56px}
+.cs-controls[data-pos="bottomRight"]{right:12px;bottom:12px}
+.cs-controls[data-pos="bottomLeft"]{left:12px;bottom:12px}
+.cs-controls button{width:28px;height:28px;border:1px solid var(--line);background:rgba(255,255,255,.95);
+  border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;padding:0}
+.cs-controls button:hover{background:var(--accent-soft)}
+.cs-pan-row{display:flex;gap:4px;justify-content:center}
+
+/* status toast */
+#toast{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);background:#1d2129;color:#fff;
+  padding:9px 14px;border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,.28);opacity:0;transition:opacity .18s;
+  max-width:70%;font-size:12.5px}
+#toast.show{opacity:1}
+#toast.err{background:var(--danger)}
+
+/* map tooltip */
+#tip{position:absolute;pointer-events:none;background:rgba(29,33,41,.95);color:#fff;border-radius:6px;
+  padding:7px 9px;font-size:12px;max-width:260px;opacity:0;transition:opacity .1s;z-index:30;line-height:1.4}
+#tip.show{opacity:1}
+#tip b{display:block;margin-bottom:3px;font-size:12.5px}
+#tip .r{display:flex;justify-content:space-between;gap:12px;color:#d8dbe2}
+#tip .r span:last-child{color:#fff;font-variant-numeric:tabular-nums}
+
+/* ---- side panel ------------------------------------------------------ */
+#side{width:var(--side-w);flex:0 0 var(--side-w);background:var(--panel);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0}
+#side.collapsed{width:0;flex-basis:0;overflow:hidden;border-left:0}
+.tabs{display:flex;border-bottom:1px solid var(--line);flex:0 0 auto}
+.tabs button{flex:1;height:36px;border:0;background:none;color:var(--ink-2);font-weight:600;
+  border-bottom:2px solid transparent}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent);background:var(--accent-soft)}
+.panel{flex:1;overflow:auto;padding:10px;display:none}
+.panel.on{display:block}
+.panel::-webkit-scrollbar{width:10px}
+.panel::-webkit-scrollbar-thumb{background:#c8cdd6;border-radius:6px;border:3px solid var(--panel)}
+
+/* accordion card */
+.card{border:1px solid var(--line);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;background:var(--panel)}
+.card > .head{display:flex;align-items:center;gap:8px;padding:9px 10px;background:var(--panel-2);
+  cursor:pointer;user-select:none}
+.card > .head .n{width:20px;height:20px;flex:0 0 20px;border-radius:5px;background:#dfe4ec;color:var(--ink-2);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+.card > .head .t{flex:1;font-weight:600}
+.card > .head .chev{transition:transform .16s;color:var(--ink-2)}
+.card.open > .head .chev{transform:rotate(90deg)}
+.card.open > .head{background:var(--accent-soft)}
+.card > .body{display:none;padding:8px 10px 10px}
+.card.open > .body{display:block}
+.card .lyr-on{width:8px;height:8px;border-radius:50%;background:#c6ccd6}
+.card .lyr-on.on{background:var(--ok)}
+
+/* rows */
+.row{display:flex;align-items:center;gap:8px;padding:4px 0;min-height:28px}
+.row.hide{display:none}
+.row > label{flex:1;color:var(--ink-2);font-size:12.2px;min-width:0}
+.row > .ctl{flex:0 0 132px;display:flex;justify-content:flex-end;align-items:center;gap:6px}
+.row.stack{flex-direction:column;align-items:stretch;gap:4px}
+.row.stack > .ctl{flex:1 1 auto;justify-content:stretch}
+.row.stack > .ctl > *{flex:1}
+.sub{font-size:11.5px;color:var(--ink-2);margin:6px 0 2px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.hint{font-size:11.5px;color:var(--ink-2);margin:2px 0 6px}
+.hint.warn{color:var(--warn)}
+.hint.err{color:var(--danger)}
+
+input[type=text],input[type=number],select,textarea{width:100%;height:27px;padding:0 7px;border:1px solid var(--line);
+  border-radius:5px;background:var(--panel);min-width:0}
+textarea{height:auto;padding:6px 7px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+input[type=color]{width:34px;height:26px;padding:1px;border:1px solid var(--line);border-radius:5px;background:var(--panel)}
+input[type=number]{text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;height:26px}
+
+/* toggle switch */
+.sw{position:relative;width:34px;height:19px;flex:0 0 34px;border-radius:11px;background:#c8cdd6;transition:background .15s}
+.sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.sw i{position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.sw.on{background:var(--accent)}
+.sw.on i{left:17px}
+
+/* data panel bits */
+.grp{border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:9px}
+.grp > h4{font-size:12.5px;margin-bottom:7px;display:flex;align-items:center;gap:7px}
+.grp > h4 .badge{margin-left:auto;font-size:10.5px;font-weight:600;padding:2px 6px;border-radius:20px;
+  background:#e6e9ef;color:var(--ink-2)}
+.grp > h4 .badge.ok{background:#dff3e8;color:var(--ok)}
+.filebtn{display:block;border:1.5px dashed var(--line);border-radius:6px;padding:10px;text-align:center;
+  color:var(--ink-2);cursor:pointer;background:var(--panel-2);font-size:12.2px}
+.filebtn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.filebtn input{display:none}
+.filename{display:flex;align-items:center;gap:6px;font-size:12px;padding:5px 0;color:var(--ink)}
+.filename .x{margin-left:auto;border:0;background:none;color:var(--ink-2);padding:2px 5px;border-radius:4px}
+.filename .x:hover{background:#f0d5d2;color:var(--danger)}
+.tag{display:inline-block;font-size:11px;background:var(--accent-soft);color:var(--accent);border-radius:4px;
+  padding:1px 6px;margin:2px 3px 0 0}
+table.mini{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}
+table.mini th,table.mini td{border-bottom:1px solid var(--line);padding:3px 4px;text-align:left;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px}
+table.mini th{color:var(--ink-2);font-weight:600}
+.rolegrid{display:grid;grid-template-columns:1fr 118px;gap:5px 7px;align-items:center;margin-top:4px}
+.rolegrid > span{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rolegrid > span code{background:var(--panel-2);padding:1px 4px;border-radius:3px;font-size:11px}
+.joinstat{display:flex;gap:6px;align-items:center;font-size:12px;padding:6px 8px;border-radius:5px;margin-top:7px}
+.joinstat.ok{background:#dff3e8;color:#16603c}
+.joinstat.bad{background:#fbe3e0;color:#8c2f22}
+.joinstat.none{background:var(--panel-2);color:var(--ink-2)}
+
+/* modal */
+#modalBack{position:fixed;inset:0;background:rgba(16,20,28,.5);display:none;align-items:center;justify-content:center;z-index:100}
+#modalBack.open{display:flex}
+.modal{background:var(--panel);border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.32);width:min(560px,92vw);
+  max-height:86vh;display:flex;flex-direction:column;overflow:hidden}
+.modal header{padding:13px 16px;border-bottom:1px solid var(--line);font-weight:700;display:flex;align-items:center;gap:8px}
+.modal .content{padding:14px 16px;overflow:auto}
+.modal footer{padding:11px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:var(--panel-2)}
+.modal .row > .ctl{flex:0 0 180px}
+
+@media (max-width:900px){ :root{--side-w:300px} }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <span class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f6fed" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4z"/>
+        <path d="M9 4v13M15 7v12.5"/></svg>
+      CartoStudio <small>design-time cartography</small>
+    </span>
+    <span class="spacer"></span>
+    <button class="tb-btn" id="btnUndo" title="Undo formatting change (Ctrl+Z)" disabled>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>
+    </button>
+    <button class="tb-btn" id="btnRedo" title="Redo formatting change (Ctrl+Shift+Z)" disabled>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M21 13a9 9 0 1 1-3-7.7L21 8"/></svg>
+    </button>
+    <div class="menu-wrap">
+      <button class="tb-btn" id="btnProject">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        Project
+      </button>
+      <div class="menu" id="menuProject">
+        <button data-act="save-json">Save project (.json)</button>
+        <label class="mi">Open project (.json)<input type="file" accept=".json,application/json" id="fileProject" hidden></label>
+        <div class="sep"></div>
+        <button data-act="copy-link">Copy shareable link (settings only)</button>
+        <button data-act="theme">Apply preset theme…</button>
+        <div class="sep"></div>
+        <button data-act="reset-fmt">Reset formatting to defaults</button>
+        <button data-act="reset-all">Clear everything</button>
+      </div>
+    </div>
+    <div class="menu-wrap">
+      <button class="tb-btn primary" id="btnExport">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/></svg>
+        Export
+      </button>
+      <div class="menu" id="menuExport">
+        <div class="grp">Vector</div>
+        <button data-act="svg">Download SVG</button>
+        <div class="grp">Raster</div>
+        <div class="row"><label for="pngScale" style="flex:1;font-size:12px;color:var(--ink-2)">Scale</label>
+          <select id="pngScale" style="flex:0 0 90px"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select></div>
+        <button data-act="png">Download PNG</button>
+        <div class="grp">Print</div>
+        <div class="row"><label style="flex:1;font-size:12px;color:var(--ink-2)">Paper</label>
+          <select id="pdfPaper" style="flex:0 0 90px">
+            <option value="a5">A5</option><option value="a4" selected>A4</option><option value="a3">A3</option>
+            <option value="letter">Letter</option><option value="legal">Legal</option><option value="tabloid">Tabloid</option>
+          </select></div>
+        <div class="row"><label style="flex:1;font-size:12px;color:var(--ink-2)">Orientation</label>
+          <select id="pdfOrient" style="flex:0 0 90px"><option value="landscape" selected>Landscape</option><option value="portrait">Portrait</option></select></div>
+        <label class="mi" style="font-size:12px"><input type="checkbox" id="pdfLegendPage"> Add legend page</label>
+        <button data-act="pdf">Download PDF</button>
+      </div>
+    </div>
+    <button class="tb-btn" id="btnSide" title="Show / hide the side panel">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round"><path d="M3 5h18v14H3z"/><path d="M15 5v14"/></svg>
+    </button>
+  </header>
+
+  <div id="body">
+    <main id="stage">
+      <div id="canvasWrap">
+        <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="overlay"></div>
+        <div id="tip"></div>
+        <div id="empty">
+          <div class="drop">
+            <h2>Start with your own geometry</h2>
+            <p>Drop a GeoJSON / TopoJSON file here, or use the <b>Data</b> panel on the right.
+               CartoStudio ships with no boundaries — every layer comes from your uploads.</p>
+          </div>
+        </div>
+        <div id="toast"></div>
+      </div>
+    </main>
+    <aside id="side">
+      <div class="tabs">
+        <button data-tab="data" class="on">Data</button>
+        <button data-tab="format">Format</button>
+      </div>
+      <div class="panel on" id="panelData"></div>
+      <div class="panel" id="panelFormat"></div>
+    </aside>
+  </div>
+</div>
+
+<div id="modalBack"><div class="modal">
+  <header id="modalTitle">Title</header>
+  <div class="content" id="modalBody"></div>
+  <footer id="modalFoot"></footer>
+</div></div>
+
+<script type="module">
+/* ============================================================================
+ * CartoStudio
+ * A design-time cartography tool: bring your own geometry + your own table,
+ * join them, style the result, export print-ready SVG / PNG / PDF.
+ *
+ * Algorithms ported from the AdminCartograph Power BI custom visual
+ * (github.com/nabilaljarmozi/AdminCartograph, branch `base`) — classification,
+ * winding rewind, label placement, glyph geometry, the five-legend container,
+ * and the latitude-aware scale bar all follow that implementation.
+ * ==========================================================================*/
+
+/* ---------------------------------------------------------------- deps ---- */
+const CDN = ['https://esm.sh', 'https://cdn.jsdelivr.net/npm'];
+let d3geo, d3poly, topojson, polylabel, Papa;
+
+async function loadDeps() {
+  const tryHost = async (host) => {
+    const j = (p) => host.includes('jsdelivr') ? `${host}/${p}/+esm` : `${host}/${p}`;
+    return Promise.all([
+      import(/* @vite-ignore */ j('d3-geo@3')),
+      import(/* @vite-ignore */ j('d3-polygon@3')),
+      import(/* @vite-ignore */ j('topojson-client@3')),
+      import(/* @vite-ignore */ j('polylabel@1.1.0')),
+      import(/* @vite-ignore */ j('papaparse@5.4.1'))
+    ]);
+  };
+  let mods = null, lastErr = null;
+  for (const host of CDN) {
+    try { mods = await tryHost(host); break; } catch (e) { lastErr = e; }
+  }
+  if (!mods) throw lastErr || new Error('Could not reach any CDN');
+  [d3geo, d3poly, topojson] = mods;
+  polylabel = mods[3].default || mods[3];
+  Papa = mods[4].default || mods[4];
+}
+
+/* Lazily loaded, only when the user actually exports / uploads that format. */
+let _jspdf = null, _xlsx = null;
+async function getJsPDF() {
+  if (_jspdf) return _jspdf;
+  for (const host of CDN) {
+    try {
+      const m = await import(/* @vite-ignore */ host.includes('jsdelivr')
+        ? `${host}/jspdf@2.5.2/+esm` : `${host}/jspdf@2.5.2`);
+      _jspdf = m.jsPDF || m.default?.jsPDF || m.default;
+      if (_jspdf) return _jspdf;
+    } catch (e) { /* try next host */ }
+  }
+  throw new Error('Could not load jsPDF from a CDN');
+}
+async function getXLSX() {
+  if (_xlsx) return _xlsx;
+  for (const host of CDN) {
+    try {
+      const m = await import(/* @vite-ignore */ host.includes('jsdelivr')
+        ? `${host}/xlsx@0.18.5/+esm` : `${host}/xlsx@0.18.5`);
+      _xlsx = m.default && m.default.read ? m.default : m;
+      if (_xlsx?.read) return _xlsx;
+    } catch (e) { /* try next host */ }
+  }
+  throw new Error('Could not load the XLSX reader from a CDN');
+}
+
+/* --------------------------------------------------------------- utils ---- */
+const SVGNS = 'http://www.w3.org/2000/svg';
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') n.className = v;
+    else if (k === 'html') n.innerHTML = v;
+    else if (k === 'text') n.textContent = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid != null) n.append(kid);
+  return n;
+};
+const sel = (tag, attrs = {}) => {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, String(v));
+  return n;
+};
+const clear = (node) => { while (node && node.firstChild) node.removeChild(node.firstChild); return node; };
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const debounce = (fn, ms = 120) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/** Join-key normalisation — uppercase, drop whitespace / dashes / underscores.
+ *  Mirrors `normPcode` in the AdminCartograph visual so "SD-01", "sd_01" and
+ *  "SD01" all collide onto the same bucket. */
+const normKey = (s) => (s == null ? '' : String(s).trim().toUpperCase().replace(/[\s_\-]+/g, ''));
+
+const isNum = (v) => v != null && v !== '' && Number.isFinite(Number(v));
+const toNum = (v) => (isNum(v) ? Number(v) : null);
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: filename });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+let toastTimer = null;
+function toast(msg, isErr = false) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.toggle('err', !!isErr);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), isErr ? 6000 : 3200);
+}
+
+/** Number formatting for labels + legends (port of render/format.ts). */
+function fmtNumber(value, decimals, mode) {
+  if (value == null || !Number.isFinite(value)) return '';
+  const d = clamp(decimals | 0, 0, 6);
+  const scaled = (div, suf) => `${(value / div).toFixed(d)}${suf}`;
+  switch (mode) {
+    case 'thousands': return scaled(1e3, 'K');
+    case 'millions': return scaled(1e6, 'M');
+    case 'percent': return `${(value * 100).toFixed(d)}%`;
+    default:
+      if (Math.abs(value) >= 1e9) return scaled(1e9, 'B');
+      if (Math.abs(value) >= 1e6) return scaled(1e6, 'M');
+      if (Math.abs(value) >= 1e3) return scaled(1e3, 'K');
+      return value.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  }
+}
+
+function parseHex(hex) {
+  if (!hex) return null;
+  const m = String(hex).replace(/^#/, '');
+  if (m.length === 3) return { r: parseInt(m[0] + m[0], 16), g: parseInt(m[1] + m[1], 16), b: parseInt(m[2] + m[2], 16) };
+  if (m.length === 6) return { r: parseInt(m.slice(0, 2), 16), g: parseInt(m.slice(2, 4), 16), b: parseInt(m.slice(4, 6), 16) };
+  return null;
+}
+const toHex = (r, g, b) => '#' + [r, g, b].map((n) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0')).join('');
+
+/** White → base sequential ramp (port of classification.ts `rampColors`). */
+function rampColors(baseColor, n) {
+  const base = parseHex(baseColor) || { r: 31, g: 119, b: 180 };
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 1 : (i + 1) / n;   // skip pure white at index 0
+    out.push(toHex(255 + (base.r - 255) * t, 255 + (base.g - 255) * t, 255 + (base.b - 255) * t));
+  }
+  return out;
+}
+
+/* ============================================================ settings ==== */
+/* One declarative schema drives: the accordion UI, the defaults, localStorage
+ * round-tripping, the URL hash and the project file. Each slice is
+ * { k: key, t: title, type, d: default, ... }. `when` hides a row unless the
+ * predicate passes; `opts` may be a literal list or a function for values that
+ * depend on the uploaded geometry. */
+
+const POSITIONS = [
+  ['topLeft', 'Top left'], ['topCenter', 'Top centre'], ['topRight', 'Top right'],
+  ['leftCenter', 'Left centre'], ['rightCenter', 'Right centre'],
+  ['bottomLeft', 'Bottom left'], ['bottomCenter', 'Bottom centre'], ['bottomRight', 'Bottom right']
+];
+const SIZES = [['minimal', 'Minimal'], ['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']];
+const ORIENT = [['vertical', 'Vertical'], ['horizontal', 'Horizontal']];
+const FONTS = ['Segoe UI', 'Helvetica', 'Arial', 'Georgia', 'Times New Roman', 'Verdana', 'Tahoma',
+  'Trebuchet MS', 'Courier New'].map((f) => [f, f]);
+const NUMFMT = [['auto', 'Auto'], ['thousands', 'Thousands (K)'], ['millions', 'Millions (M)'], ['percent', 'Percent']];
+
+/** Slice list shared by the three label cards. */
+function labelSlices(defs) {
+  return [
+    { k: 'show', t: 'Show', type: 'toggle', d: defs.show ?? true, layer: true },
+    { k: 'content', t: 'Content', type: 'select', d: defs.content ?? 'name',
+      opts: [['name', 'Name only'], ['value', 'Value only'], ['name_value', 'Name + value']] },
+    { k: 'nameSource', t: 'Name source', type: 'select', d: 'geometry',
+      opts: [['geometry', 'Geometry name'], ['labelText1', 'Label Text 1 (override)']] },
+    { k: 'valueSource', t: 'Value source', type: 'select', d: 'choropleth', opts: [
+      ['choropleth', 'Choropleth value'], ['bubble', 'Bubble value'], ['both', 'Choropleth + Bubble'],
+      ['custom', 'Label Value 2 only'], ['choropleth_custom', 'Choropleth + Value 2'],
+      ['bubble_custom', 'Bubble + Value 2'], ['all', 'All three']] },
+    { k: 'fontFamily', t: 'Font family', type: 'select', d: 'Segoe UI', opts: FONTS },
+    { k: 'fontSize', t: 'Font size', type: 'number', d: defs.fontSize ?? 11, min: 5, max: 60, step: 0.5 },
+    { k: 'color', t: 'Name colour', type: 'color', d: defs.color ?? '#222222' },
+    { k: 'valueColor', t: 'Choropleth value colour', type: 'color', d: '#444444' },
+    { k: 'bubbleValueColor', t: 'Bubble value colour', type: 'color', d: '#e6550d' },
+    { k: 'customValueColor', t: 'Value 2 colour', type: 'color', d: '#0f766e' },
+    { k: 'bold', t: 'Bold', type: 'toggle', d: defs.bold ?? false },
+    { k: 'italic', t: 'Italic', type: 'toggle', d: false },
+    { k: 'haloColor', t: 'Halo colour', type: 'color', d: '#ffffff' },
+    { k: 'haloWidth', t: 'Halo width', type: 'number', d: defs.haloWidth ?? 2, min: 0, max: 8, step: 0.25 },
+    { k: 'decimals', t: 'Decimals', type: 'number', d: 0, min: 0, max: 6, step: 1 },
+    { k: 'format', t: 'Number format', type: 'select', d: 'auto', opts: NUMFMT },
+    { k: 'placement', t: 'Placement', type: 'select', d: 'horizontal',
+      opts: [['horizontal', 'Horizontal'], ['straight', 'Straight'], ['curved', 'Curved'], ['boundary', 'Boundary']] },
+    { k: 'wordsOnSeparateLines', t: 'Words on separate lines', type: 'toggle', d: false },
+    { k: 'stackWhenNeeded', t: 'Stack when needed', type: 'toggle', d: true },
+    { k: 'reduceFontSize', t: 'Reduce font size to fit', type: 'toggle', d: true },
+    { k: 'abbreviate', t: 'Abbreviate / truncate', type: 'toggle', d: true },
+    { k: 'allowOverrun', t: 'Allow overrun', type: 'toggle', d: false },
+    { k: 'hideOnOverflow', t: 'Hide when it cannot fit', type: 'toggle', d: defs.hideOnOverflow ?? false },
+    { k: 'spreadCharacters', t: 'Spread characters', type: 'toggle', d: false },
+    { k: 'avoidHoles', t: 'Avoid holes', type: 'toggle', d: true },
+    { k: 'labelLargestPart', t: 'Label largest part only', type: 'toggle', d: true },
+    { k: 'constantSize', t: 'Constant size on zoom', type: 'toggle', d: false }
+  ];
+}
+
+/** Legend cards share the same five slices. */
+function legendSlices(defPos, defShow, titlePh, extraOrient) {
+  return [
+    { k: 'show', t: 'Show', type: 'toggle', d: defShow, layer: true },
+    { k: 'title', t: 'Title', type: 'text', d: '', ph: titlePh },
+    { k: 'orientation', t: 'Orientation', type: 'select', d: 'vertical', opts: extraOrient || ORIENT },
+    { k: 'position', t: 'Position', type: 'select', d: defPos, opts: POSITIONS },
+    { k: 'size', t: 'Size', type: 'select', d: 'medium', opts: SIZES }
+  ];
+}
+
+const CARDS = [
+  { key: 'general', title: 'Map setup', slices: [
+    { k: 'viewMode', t: 'View mode', type: 'select', d: 'auto',
+      opts: [['auto', 'Auto'], ['admin1', 'Admin 1 only'], ['admin2', 'Admin 2']] },
+    { k: 'background', t: 'Background colour', type: 'color', d: '#ffffff' },
+    { k: 'transparentBackground', t: 'Transparent background', type: 'toggle', d: false },
+    { k: 'padding', t: 'Fit padding (px)', type: 'number', d: 14, min: 0, max: 200, step: 2 },
+    { k: 'admin1Alias', t: 'Admin 1 alias', type: 'text', d: '', ph: 'State / Governorate…' },
+    { k: 'admin2Alias', t: 'Admin 2 alias', type: 'text', d: '', ph: 'District / Locality…' },
+    { k: 'admin1LinkField', t: 'Admin 1 link field', type: 'select', d: 'ADM1_PCODE',
+      opts: () => linkFieldOptions(1), hint: 'Which geometry property the Admin 1 data column joins to.' },
+    { k: 'admin2LinkField', t: 'Admin 2 link field', type: 'select', d: 'ADM2_PCODE', opts: () => linkFieldOptions(2) },
+    { k: 'hideUnfocused', t: 'Hide other Admin 1 when drilled', type: 'toggle', d: false },
+    { k: 'hideChrome', t: 'Hide map chrome', type: 'toggle', d: false }
+  ] },
+
+  { key: 'choropleth', title: 'Choropleth fill', slices: [
+    { k: 'show', t: 'Show', type: 'toggle', d: true, layer: true },
+    { k: 'classification', t: 'Classification', type: 'select', d: 'quantile', opts: [
+      ['quantile', 'Quantile'], ['equal', 'Equal interval'], ['manual', 'Manual breaks'], ['categorical', 'Categorical']] },
+    { k: 'classCount', t: 'Number of classes', type: 'number', d: 5, min: 2, max: 7, step: 1,
+      when: (s) => s.choropleth.classification !== 'categorical' && s.choropleth.classification !== 'manual' },
+    { k: 'classifyScope', t: 'Classify on', type: 'select', d: 'visible',
+      opts: [['visible', 'Visible features'], ['all', 'All features (stable while drilling)']],
+      hint: 'Visible-only recomputes the breaks for whatever is on screen; All keeps one scale so colours stay comparable between drill levels.' },
+    { k: 'manualBreaks', t: 'Manual breaks', type: 'text', d: '', ph: '10, 50, 100, 500',
+      when: (s) => s.choropleth.classification === 'manual' },
+    { k: 'mode', t: 'Colour mode', type: 'select', d: 'automatic',
+      opts: [['automatic', 'Automatic ramp'], ['custom', 'Custom classes']],
+      when: (s) => s.choropleth.classification !== 'categorical' },
+    { k: 'baseColor', t: 'Base colour', type: 'color', d: '#1f77b4',
+      when: (s) => s.choropleth.mode === 'automatic' && s.choropleth.classification !== 'categorical' },
+    { k: 'color1', t: 'Class 1', type: 'color', d: '#deebf7', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color2', t: 'Class 2', type: 'color', d: '#9ecae1', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color3', t: 'Class 3', type: 'color', d: '#4292c6', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color4', t: 'Class 4', type: 'color', d: '#2171b5', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color5', t: 'Class 5', type: 'color', d: '#084594', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color6', t: 'Class 6', type: 'color', d: '#08306b', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color7', t: 'Class 7', type: 'color', d: '#041e42', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'blankColor', t: 'No-data colour', type: 'color', d: '#eeeeee' },
+    { k: 'blankTransparent', t: 'Transparent for no-data', type: 'toggle', d: false },
+    { k: 'zeroAsBlank', t: 'Treat 0 as no-data', type: 'toggle', d: false },
+    { k: 'fillOpacity', t: 'Fill opacity', type: 'number', d: 0.85, min: 0, max: 1, step: 0.05 }
+  ] },
+
+  { key: 'bubbles', title: 'Bubble overlay', slices: [
+    { k: 'show', t: 'Show', type: 'toggle', d: false, layer: true },
+    { k: 'fillColor', t: 'Fill colour', type: 'color', d: '#e6550d' },
+    { k: 'strokeColor', t: 'Stroke colour', type: 'color', d: '#ffffff' },
+    { k: 'strokeWidth', t: 'Stroke width', type: 'number', d: 1, min: 0, max: 8, step: 0.25 },
+    { k: 'opacity', t: 'Opacity', type: 'number', d: 0.85, min: 0, max: 1, step: 0.05 },
+    { k: 'minRadius', t: 'Min radius (px)', type: 'number', d: 4, min: 0.5, max: 80, step: 0.5 },
+    { k: 'maxRadius', t: 'Max radius (px)', type: 'number', d: 30, min: 1, max: 200, step: 1 },
+    { k: 'labelPlacement', t: 'Label position vs bubble', type: 'select', d: 'above', opts: [
+      ['above', 'Above'], ['below', 'Below'], ['left', 'Left'], ['right', 'Right'], ['center', 'Centre']] },
+    { k: 'constantSize', t: 'Constant size on zoom', type: 'toggle', d: true },
+    { k: 'zeroAsBlank', t: 'Treat 0 as no-data', type: 'toggle', d: false }
+  ] },
+
+  { key: 'glyphChart', title: 'Pie / Column overlay', slices: [
+    { k: 'show', t: 'Show', type: 'toggle', d: false, layer: true },
+    { k: 'type', t: 'Chart type', type: 'select', d: 'pie', opts: [
+      ['pie', 'Pie'], ['donut', 'Donut'], ['column', 'Column'], ['concentric', 'Concentric circles']] },
+    { k: 'donutInnerRatio', t: 'Donut inner ratio', type: 'number', d: 0.5, min: 0, max: 0.85, step: 0.05,
+      when: (s) => s.glyphChart.type === 'donut' },
+    { k: 'scaleByTotal', t: 'Scale glyph by total', type: 'toggle', d: true },
+    { k: 'minSize', t: 'Min size (px)', type: 'number', d: 14, min: 2, max: 200, step: 1 },
+    { k: 'maxSize', t: 'Max size (px)', type: 'number', d: 36, min: 4, max: 300, step: 1 },
+    { k: 'stroke', t: 'Stroke colour', type: 'color', d: '#ffffff' },
+    { k: 'strokeWidth', t: 'Stroke width', type: 'number', d: 1, min: 0, max: 8, step: 0.25 },
+    { k: 'opacity', t: 'Opacity', type: 'number', d: 0.9, min: 0, max: 1, step: 0.05 },
+    { k: 'color1', t: 'Category 1', type: 'color', d: '#1f77b4' },
+    { k: 'color2', t: 'Category 2', type: 'color', d: '#ff7f0e' },
+    { k: 'color3', t: 'Category 3', type: 'color', d: '#2ca02c' },
+    { k: 'color4', t: 'Category 4', type: 'color', d: '#d62728' },
+    { k: 'color5', t: 'Category 5', type: 'color', d: '#9467bd' },
+    { k: 'color6', t: 'Category 6', type: 'color', d: '#8c564b' },
+    { k: 'color7', t: 'Category 7', type: 'color', d: '#e377c2' },
+    { k: 'color8', t: 'Category 8', type: 'color', d: '#7f7f7f' },
+    { k: 'labelPlacement', t: 'Label position vs glyph', type: 'select', d: 'above', opts: [
+      ['above', 'Above'], ['below', 'Below'], ['left', 'Left'], ['right', 'Right'], ['center', 'Centre']] },
+    { k: 'constantSize', t: 'Constant size on zoom', type: 'toggle', d: true },
+    { k: 'zeroAsBlank', t: 'Treat 0 as no-data', type: 'toggle', d: false }
+  ] },
+
+  { key: 'borders', title: 'Borders', slices: [
+    { k: 'stateColor', t: 'Admin 1 colour', type: 'color', d: '#444444' },
+    { k: 'stateWidth', t: 'Admin 1 width', type: 'number', d: 1, min: 0, max: 12, step: 0.25 },
+    { k: 'stateOpacity', t: 'Admin 1 opacity', type: 'number', d: 1, min: 0, max: 1, step: 0.05 },
+    { k: 'localityColor', t: 'Admin 2 colour', type: 'color', d: '#888888' },
+    { k: 'localityWidth', t: 'Admin 2 width', type: 'number', d: 0.5, min: 0, max: 12, step: 0.25 },
+    { k: 'localityOpacity', t: 'Admin 2 opacity', type: 'number', d: 0.8, min: 0, max: 1, step: 0.05 },
+    { k: 'countryGlowShow', t: 'Outer glow', type: 'toggle', d: false },
+    { k: 'countryGlowColor', t: 'Glow colour', type: 'color', d: '#d0d4da', when: (s) => s.borders.countryGlowShow },
+    { k: 'countryGlowRadius', t: 'Glow radius (px)', type: 'number', d: 12, min: 1, max: 80, step: 1, when: (s) => s.borders.countryGlowShow },
+    { k: 'countryGlowOpacity', t: 'Glow opacity', type: 'number', d: 0.6, min: 0, max: 1, step: 0.05, when: (s) => s.borders.countryGlowShow }
+  ] },
+
+  { key: 'stateLabels', title: 'Admin 1 labels', slices: labelSlices({ show: true, fontSize: 12, bold: true }) },
+  { key: 'localityLabels', title: 'Admin 2 labels — default view',
+    slices: labelSlices({ show: true, fontSize: 9, haloWidth: 1.5 }) },
+  { key: 'drillLabels', title: 'Admin 2 labels — drill view',
+    slices: labelSlices({ show: true, fontSize: 10, haloWidth: 1.5 }) },
+
+  { key: 'valueLegend', title: 'Choropleth legend', slices: [
+    ...legendSlices('bottomRight', true, '(column name)'),
+    { k: 'decimals', t: 'Decimals', type: 'number', d: 0, min: 0, max: 6, step: 1 }
+  ] },
+  { key: 'bubbleLegend', title: 'Bubble legend', slices: legendSlices('bottomLeft', true, '(column name)',
+    [['vertical', 'Vertical'], ['horizontal', 'Horizontal (3–4 bubbles)'], ['compact', 'Compact (min / max)']]) },
+  { key: 'glyphLegend', title: 'Pie / Column legend', slices: legendSlices('topLeft', true, 'Categories') },
+  { key: 'adminLevelsLegend', title: 'Admin levels legend', slices: [
+    ...legendSlices('bottomLeft', false, 'Admin levels'),
+    { k: 'showAdmin1', t: 'Show Admin 1 row', type: 'toggle', d: true },
+    { k: 'showAdmin2', t: 'Show Admin 2 row', type: 'toggle', d: true }
+  ] },
+  { key: 'valuesLegend', title: 'Values legend', slices: legendSlices('topLeft', false, 'Values') },
+
+  { key: 'legendContainer', title: 'Legend container', slices: [
+    { k: 'containerOrientation', t: 'Stacking', type: 'select', d: 'vertical',
+      opts: [['vertical', 'Vertical (top → bottom)'], ['horizontal', 'Horizontal (left → right)']] },
+    { k: 'borderWidth', t: 'Border width', type: 'number', d: 1, min: 0, max: 6, step: 0.25 },
+    { k: 'borderColor', t: 'Border colour', type: 'color', d: '#cccccc' },
+    { k: 'cornerRadius', t: 'Corner radius', type: 'number', d: 6, min: 0, max: 24, step: 1 },
+    { k: 'padding', t: 'Padding', type: 'number', d: 8, min: 0, max: 40, step: 1 },
+    { k: 'background', t: 'Background', type: 'color', d: '#ffffff' },
+    { k: 'backgroundOpacity', t: 'Background opacity', type: 'number', d: 0.9, min: 0, max: 1, step: 0.05 },
+    { k: 'headerColor', t: 'Header colour', type: 'color', d: '#222222' },
+    { k: 'headerBold', t: 'Header bold', type: 'toggle', d: true },
+    { k: 'headerFontSize', t: 'Header size (0 = auto)', type: 'number', d: 0, min: 0, max: 40, step: 1 },
+    { k: 'itemColor', t: 'Item colour', type: 'color', d: '#1a1a1a' },
+    { k: 'itemFontSize', t: 'Item size (0 = auto)', type: 'number', d: 0, min: 0, max: 40, step: 1 },
+    { k: 'itemSwatchSize', t: 'Swatch size (0 = auto)', type: 'number', d: 0, min: 0, max: 60, step: 1 }
+  ] },
+
+  { key: 'scaleBar', title: 'Scale bar', slices: [
+    { k: 'show', t: 'Show', type: 'toggle', d: false, layer: true },
+    { k: 'units', t: 'Units', type: 'select', d: 'km', opts: [['km', 'Kilometres'], ['mi', 'Miles']] },
+    { k: 'position', t: 'Position', type: 'select', d: 'bottomLeft',
+      opts: POSITIONS.filter(([v]) => /^(top|bottom)(Left|Right)$/.test(v)) },
+    { k: 'color', t: 'Colour', type: 'color', d: '#222222' },
+    { k: 'fontSize', t: 'Font size', type: 'number', d: 11, min: 6, max: 30, step: 0.5 }
+  ] },
+
+  { key: 'controls', title: 'Map controls', slices: [
+    { k: 'showZoom', t: 'Zoom buttons', type: 'toggle', d: true },
+    { k: 'showPan', t: 'Pan buttons', type: 'toggle', d: false },
+    { k: 'wheelZoom', t: 'Wheel zoom', type: 'toggle', d: true },
+    { k: 'dragPan', t: 'Drag to pan', type: 'toggle', d: true },
+    { k: 'drillOnClick', t: 'Click Admin 1 to drill', type: 'toggle', d: true },
+    { k: 'showTooltip', t: 'Hover tooltips', type: 'toggle', d: true },
+    { k: 'position', t: 'Position', type: 'select', d: 'topRight',
+      opts: POSITIONS.filter(([v]) => /^(top|bottom)(Left|Right)$/.test(v)) }
+  ] }
+];
+
+const CARD_BY_KEY = Object.fromEntries(CARDS.map((c) => [c.key, c]));
+
+function defaultSettings() {
+  const out = {};
+  for (const card of CARDS) {
+    out[card.key] = {};
+    for (const s of card.slices) out[card.key][s.k] = s.d;
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------- state --- */
+const state = {
+  geom: {
+    adm1: null,            // GeoJSON FeatureCollection, properties normalised
+    adm2: null,
+    adm1Name: '', adm2Name: '',
+    adm1Props: [], adm2Props: [],   // property names seen on the uploads
+    mapping: { adm1Pcode: '', adm1Name: '', adm2Pcode: '', adm2Name: '', adm2Parent: '' }
+  },
+  data: {
+    rows: [],              // array of plain objects
+    columns: [],           // column names in file order
+    fileName: '',
+    roles: {               // role -> column name (glyphValues + tooltips are arrays)
+      adm1Key: '', adm2Key: '', colorValue: '', bubbleSize: '',
+      glyphValues: [], labelValue2: '', labelText1: '', tooltips: []
+    }
+  },
+  settings: defaultSettings(),
+  drill: null,             // ADM1_PCODE currently drilled into
+  zoom: 1, panX: 0, panY: 0,
+  viewportW: 800, viewportH: 600,
+  // live render products, reused by zoom / export without a full re-render
+  last: null
+};
+const S = () => state.settings;
+
+/* ========================================================= geometry i/o ==== */
+
+/**
+ * RFC-7946 → d3-geo rewind.
+ *
+ * d3-geo uses the spherical right-hand rule: a polygon's interior must lie to
+ * the RIGHT of the direction of travel, which in lon/lat means outer rings run
+ * CLOCKWISE and holes counter-clockwise. RFC 7946 (what almost every modern
+ * exporter emits) says the opposite. Feeding a CCW outer ring to d3.geoPath
+ * makes it the COMPLEMENT of the region — the whole sphere minus the polygon —
+ * which renders as one solid fill with a pinhole. Every upload goes through
+ * here first. Port of src/geo/winding.ts.
+ */
+function rewindRing(ring, targetCCW) {
+  if (!Array.isArray(ring) || ring.length < 4) return false;
+  let sum = 0;
+  for (let i = 0; i < ring.length - 1; i++) sum += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+  const isCCW = sum > 0;
+  if (isCCW === targetCCW) return false;
+  ring.reverse();
+  return true;
+}
+function rewindPolygon(polygon) {
+  if (!Array.isArray(polygon) || !polygon.length) return 0;
+  let n = 0;
+  if (rewindRing(polygon[0], false)) n++;              // outer → CW
+  for (let i = 1; i < polygon.length; i++) if (rewindRing(polygon[i], true)) n++;  // holes → CCW
+  return n;
+}
+function rewindGeometry(g) {
+  if (!g || typeof g !== 'object') return 0;
+  if (g.type === 'Polygon') return rewindPolygon(g.coordinates);
+  if (g.type === 'MultiPolygon') return g.coordinates.reduce((a, p) => a + rewindPolygon(p), 0);
+  if (g.type === 'GeometryCollection' && Array.isArray(g.geometries)) {
+    return g.geometries.reduce((a, inner) => a + rewindGeometry(inner), 0);
+  }
+  return 0;
+}
+function rewindFeatureCollection(fc) {
+  let flipped = 0;
+  for (const f of (fc?.features || [])) if (f?.geometry) flipped += rewindGeometry(f.geometry);
+  return flipped;
+}
+
+/** Accepts GeoJSON (FeatureCollection / Feature / bare geometry) or TopoJSON. */
+function parseGeometryText(text, filename) {
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch (e) { throw new Error(`${filename} is not valid JSON (${(e.message || '').slice(0, 90)})`); }
+  return normaliseToFC(parsed, filename);
+}
+
+function normaliseToFC(parsed, filename) {
+  if (!parsed || typeof parsed !== 'object') throw new Error(`${filename} did not contain an object`);
+
+  // TopoJSON — decode every object in the topology and merge the features.
+  if (parsed.type === 'Topology') {
+    if (!parsed.objects || !Object.keys(parsed.objects).length) {
+      throw new Error(`${filename} is a TopoJSON topology with no objects`);
+    }
+    const feats = [];
+    for (const name of Object.keys(parsed.objects)) {
+      const fc = topojson.feature(parsed, parsed.objects[name]);
+      if (fc.type === 'FeatureCollection') feats.push(...fc.features);
+      else feats.push(fc);
+    }
+    if (!feats.length) throw new Error(`${filename} decoded to zero features`);
+    return { type: 'FeatureCollection', features: feats };
+  }
+
+  let fc = null;
+  if (parsed.type === 'FeatureCollection' && Array.isArray(parsed.features)) fc = parsed;
+  else if (parsed.type === 'Feature') fc = { type: 'FeatureCollection', features: [parsed] };
+  else if (['Polygon', 'MultiPolygon', 'GeometryCollection'].includes(parsed.type)) {
+    fc = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: parsed }] };
+  }
+  if (!fc) throw new Error(`${filename}: expected a GeoJSON FeatureCollection or a TopoJSON Topology, got "${parsed.type || typeof parsed}"`);
+
+  fc.features = fc.features.filter((f) => f && f.geometry &&
+    ['Polygon', 'MultiPolygon'].includes(f.geometry.type));
+  if (!fc.features.length) throw new Error(`${filename} has no Polygon / MultiPolygon features`);
+  for (const f of fc.features) if (!f.properties) f.properties = {};
+  return fc;
+}
+
+/** Union of property names across the first 50 features (some exporters put
+ *  different keys on different rows). */
+function collectPropertyNames(fc) {
+  const seen = new Set();
+  for (const f of (fc.features || []).slice(0, 50)) {
+    for (const k of Object.keys(f.properties || {})) seen.add(k);
+  }
+  return Array.from(seen);
+}
+
+const GUESS_PATTERNS = {
+  adm1Pcode: [/^adm1[_-]?pcode$/i, /^pcode[_-]?1$/i, /^adm1[_-]?code$/i, /^admin1[_-]?(p)?code$/i,
+    /^gid[_-]?1$/i, /^iso[_-]?1$/i, /^state[_-]?id$/i, /^hasc[_-]?1$/i, /^id[_-]?1$/i, /^shapeid$/i],
+  adm1Name: [/^adm1[_-]?en$/i, /^name[_-]?1$/i, /^adm1[_-]?name$/i, /^admin1[_-]?name$/i,
+    /^state[_-]?name$/i, /^state$/i, /^province$/i, /^region$/i, /^shapename$/i, /^name$/i],
+  adm2Pcode: [/^adm2[_-]?pcode$/i, /^pcode[_-]?2$/i, /^adm2[_-]?code$/i, /^admin2[_-]?(p)?code$/i,
+    /^gid[_-]?2$/i, /^county[_-]?id$/i, /^id[_-]?2$/i],
+  adm2Name: [/^adm2[_-]?en$/i, /^name[_-]?2$/i, /^adm2[_-]?name$/i, /^admin2[_-]?name$/i,
+    /^locality[_-]?name$/i, /^district$/i, /^county$/i, /^name$/i]
+};
+function guessField(names, role) {
+  for (const re of GUESS_PATTERNS[role]) {
+    const hit = names.find((n) => re.test(n));
+    if (hit) return hit;
+  }
+  return '';
+}
+
+/**
+ * Copy the user's chosen property values onto the canonical keys the renderer
+ * uses (ADM1_PCODE / ADM1_EN / ADM2_PCODE / ADM2_EN). Original properties are
+ * kept so tooltips and the "join by any field" dropdown can still reach them.
+ */
+function applyMapping(fc, level, mapping) {
+  invalidateAreas();
+  const pairs = level === 1
+    ? [['ADM1_PCODE', mapping.adm1Pcode], ['ADM1_EN', mapping.adm1Name]]
+    : [['ADM1_PCODE', mapping.adm2Parent || mapping.adm1Pcode], ['ADM2_PCODE', mapping.adm2Pcode],
+       ['ADM2_EN', mapping.adm2Name]];
+  for (const f of fc.features) {
+    const p = f.properties || (f.properties = {});
+    // Snapshot before clearing so mapping a canonical name onto itself
+    // (ADM1_PCODE → ADM1_PCODE) still works.
+    const snapshot = pairs.map(([, src]) => (src ? p[src] : undefined));
+    for (const [target] of pairs) delete p[target];
+    pairs.forEach(([target], i) => {
+      const v = snapshot[i];
+      if (v != null && v !== '') p[target] = String(v);
+    });
+  }
+}
+
+/** Options for the Admin-N link-field dropdown: every property carried by the
+ *  uploaded geometry at that level, PCODE first. */
+function linkFieldOptions(level) {
+  const props = level === 1 ? state.geom.adm1Props : state.geom.adm2Props;
+  const canonical = level === 1 ? ['ADM1_PCODE', 'ADM1_EN'] : ['ADM2_PCODE', 'ADM2_EN'];
+  const rest = props.filter((p) => !canonical.includes(p));
+  return [...canonical, ...rest].map((p) => [p, p === canonical[0] ? `${p} (join key)` :
+    p === canonical[1] ? `${p} (name)` : p]);
+}
+
+/** Alias → canonical PCODE for the chosen link field. Keys are normalised so
+ *  minor formatting differences still match (port of buildLinkMaps). */
+function buildLinkMap(fc, linkField, pcodeKey) {
+  const m = new Map();
+  if (!fc || !linkField || linkField === pcodeKey) return m;
+  for (const f of fc.features) {
+    const code = f.properties?.[pcodeKey];
+    const key = normKey(f.properties?.[linkField]);
+    if (code && key && !m.has(key)) m.set(key, String(code));
+  }
+  return m;
+}
+
+/* ============================================================= data i/o ==== */
+
+function parseDelimitedText(text, filename) {
+  const res = Papa.parse(text.trim(), { header: true, skipEmptyLines: 'greedy', dynamicTyping: false });
+  if (!res.data || !res.data.length) throw new Error(`${filename} produced no rows`);
+  const columns = (res.meta.fields || Object.keys(res.data[0] || {})).filter((c) => c != null && c !== '');
+  if (!columns.length) throw new Error(`${filename} has no header row`);
+  return { rows: res.data, columns };
+}
+
+async function parseWorkbookFile(file) {
+  const XLSX = await getXLSX();
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array' });
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) throw new Error(`${file.name} has no sheets`);
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '', raw: false });
+  if (!rows.length) throw new Error(`${file.name} → sheet "${sheetName}" is empty`);
+  return { rows, columns: Object.keys(rows[0]) };
+}
+
+/** Best-effort first pass at the role bindings so a fresh upload already
+ *  shows something on the map. Everything is overridable in the Data panel. */
+function inferRoles(columns, rows) {
+  const roles = { adm1Key: '', adm2Key: '', colorValue: '', bubbleSize: '',
+    glyphValues: [], labelValue2: '', labelText1: '', tooltips: [] };
+  const numericScore = (col) => {
+    let n = 0, total = 0;
+    for (const r of rows.slice(0, 60)) { if (r[col] === '' || r[col] == null) continue; total++; if (isNum(r[col])) n++; }
+    return total ? n / total : 0;
+  };
+  const pick = (pats) => columns.find((c) => pats.some((re) => re.test(c)));
+  roles.adm1Key = pick([/^adm1[_-]?pcode$/i, /^pcode[_-]?1$/i, /adm1/i, /admin1/i, /state/i, /province/i,
+    /governorate/i, /^region$/i]) || '';
+  roles.adm2Key = pick([/^adm2[_-]?pcode$/i, /^pcode[_-]?2$/i, /adm2/i, /admin2/i, /district/i, /locality/i, /county/i]) || '';
+  if (roles.adm2Key === roles.adm1Key) roles.adm2Key = '';
+  // Nothing matched by name: fall back to the first mostly-textual column,
+  // which in practice is the area key in hand-made spreadsheets.
+  if (!roles.adm1Key && !roles.adm2Key) {
+    roles.adm1Key = columns.find((c) => numericScore(c) < 0.3) || '';
+  }
+  const numeric = columns.filter((c) => c !== roles.adm1Key && c !== roles.adm2Key && numericScore(c) > 0.7);
+  if (numeric.length) roles.colorValue = numeric[0];
+  return roles;
+}
+
+/* ============================================================== the join === */
+
+/**
+ * Fold the uploaded table into one AreaDatum per PCODE, resolving the join
+ * through the chosen link field. Mirrors dataConverter.prepareDataView +
+ * the PCODE-tolerant fallback in visual.ts.
+ */
+function buildAreas() {
+  const { rows, roles } = state.data;
+  const g = state.geom;
+  const areas = new Map();
+  const stats = { matched: 0, unmatched: 0, unmatchedSamples: [], rows: rows.length };
+  if (!rows.length || (!roles.adm1Key && !roles.adm2Key)) return { areas, stats };
+
+  const link1 = buildLinkMap(g.adm1, S().general.admin1LinkField, 'ADM1_PCODE');
+  const link2 = buildLinkMap(g.adm2, S().general.admin2LinkField, 'ADM2_PCODE');
+  // Every canonical code that exists in the geometry, for match reporting.
+  const codes1 = new Set((g.adm1?.features || []).map((f) => normKey(f.properties.ADM1_PCODE)).filter(Boolean));
+  const codes2 = new Set((g.adm2?.features || []).map((f) => normKey(f.properties.ADM2_PCODE)).filter(Boolean));
+  // Admin2 → parent Admin1, used when only the Admin2 key is bound.
+  const childToParent = new Map();
+  for (const f of (g.adm2?.features || [])) {
+    const c = f.properties.ADM2_PCODE, p = f.properties.ADM1_PCODE;
+    if (c && p) childToParent.set(normKey(c), String(p));
+  }
+
+  const canonical = (raw, map) => {
+    if (raw == null || raw === '') return null;
+    const k = normKey(raw);
+    return map.size ? (map.get(k) || String(raw).trim()) : String(raw).trim();
+  };
+
+  for (const row of rows) {
+    const a1 = roles.adm1Key ? canonical(row[roles.adm1Key], link1) : null;
+    const a2 = roles.adm2Key ? canonical(row[roles.adm2Key], link2) : null;
+    const key = a2 || a1;
+    if (!key) continue;
+    const level = a2 ? 2 : 1;
+    const known = level === 2 ? codes2.has(normKey(key)) : codes1.has(normKey(key));
+    if (known) stats.matched++;
+    else {
+      stats.unmatched++;
+      if (stats.unmatchedSamples.length < 3) stats.unmatchedSamples.push(String(key));
+    }
+
+    const glyphValues = roles.glyphValues.map((c) => toNum(row[c]) ?? 0);
+    const tooltips = roles.tooltips.map((c) => ({ label: c, value: row[c] }));
+    const datum = {
+      pcode: key,
+      level,
+      parentPcode: level === 2 ? (a1 || childToParent.get(normKey(key)) || null) : key,
+      colorValue: roles.colorValue ? toNum(row[roles.colorValue]) : null,
+      colorValueRaw: roles.colorValue ? row[roles.colorValue] : null,
+      bubbleSize: roles.bubbleSize ? toNum(row[roles.bubbleSize]) : null,
+      glyphValues,
+      labelValue2: roles.labelValue2 ? toNum(row[roles.labelValue2]) : null,
+      labelText1: roles.labelText1 ? (row[roles.labelText1] || null) : null,
+      tooltips
+    };
+    const existing = areas.get(key);
+    // Duplicate rows for the same area: sum the measures so pre-aggregated and
+    // transaction-level tables both behave. Text fields keep the first value.
+    if (existing) {
+      const add = (a, b) => (a == null ? b : (b == null ? a : a + b));
+      existing.colorValue = add(existing.colorValue, datum.colorValue);
+      existing.bubbleSize = add(existing.bubbleSize, datum.bubbleSize);
+      existing.labelValue2 = add(existing.labelValue2, datum.labelValue2);
+      for (let i = 0; i < glyphValues.length; i++) existing.glyphValues[i] = (existing.glyphValues[i] || 0) + glyphValues[i];
+      if (!existing.labelText1) existing.labelText1 = datum.labelText1;
+    } else {
+      areas.set(key, datum);
+    }
+  }
+  return { areas, stats };
+}
+
+/** The join is the one O(rows) step in the render path, so memoise it: dragging
+ *  a colour picker must not re-scan a 100k-row table on every frame. */
+let _areasCache = null, _areasKey = '';
+function getAreas() {
+  const key = JSON.stringify([state.data.fileName, state.data.rows.length, state.data.roles,
+    S().general.admin1LinkField, S().general.admin2LinkField, state.geom.mapping,
+    state.geom.adm1Name, state.geom.adm2Name]);
+  if (_areasCache && _areasKey === key) return _areasCache;
+  _areasKey = key;
+  _areasCache = buildAreas();
+  return _areasCache;
+}
+const invalidateAreas = () => { _areasCache = null; };
+
+/** Roll Admin2 rows up to their parent Admin1 (port of aggregateToStates). */
+function aggregateToAdmin1(areas) {
+  const childToParent = new Map();
+  for (const f of (state.geom.adm2?.features || [])) {
+    const c = f.properties.ADM2_PCODE, p = f.properties.ADM1_PCODE;
+    if (c && p) childToParent.set(String(c), String(p));
+  }
+  const acc = new Map();
+  for (const a of areas.values()) {
+    const key = a.level === 1 ? a.pcode : (a.parentPcode || childToParent.get(a.pcode) || null);
+    if (!key) continue;
+    if (!acc.has(key)) {
+      acc.set(key, { pcode: key, level: 1, parentPcode: key, colorValue: null, colorValueRaw: null,
+        bubbleSize: null, glyphValues: [], labelValue2: null, labelText1: null, tooltips: [],
+        _tally: new Map(), _tips: new Map() });
+    }
+    const t = acc.get(key);
+    const add = (x, y) => (y == null ? x : (x ?? 0) + y);
+    t.colorValue = add(t.colorValue, a.colorValue);
+    t.bubbleSize = add(t.bubbleSize, a.bubbleSize);
+    t.labelValue2 = add(t.labelValue2, a.labelValue2);
+    if (!t.labelText1 && a.labelText1) t.labelText1 = a.labelText1;
+    if (a.colorValueRaw != null && a.colorValueRaw !== '') {
+      const k = String(a.colorValueRaw);
+      t._tally.set(k, (t._tally.get(k) || 0) + 1);
+    }
+    for (let i = 0; i < a.glyphValues.length; i++) t.glyphValues[i] = (t.glyphValues[i] || 0) + (a.glyphValues[i] || 0);
+    for (const tip of a.tooltips) {
+      const e = t._tips.get(tip.label) || { sum: null, text: null };
+      const n = isNum(String(tip.value).replace(/,/g, '')) ? Number(String(tip.value).replace(/,/g, '')) : NaN;
+      if (Number.isFinite(n)) e.sum = (e.sum ?? 0) + n;
+      else if (!e.text && tip.value) e.text = tip.value;
+      t._tips.set(tip.label, e);
+    }
+  }
+  for (const t of acc.values()) {
+    // Categorical roll-up takes the modal child category.
+    let best = null, bestN = 0;
+    t._tally.forEach((n, k) => { if (n > bestN) { bestN = n; best = k; } });
+    t.colorValueRaw = best;
+    t.tooltips = Array.from(t._tips, ([label, e]) => ({ label, value: e.sum != null ? e.sum : e.text }));
+    delete t._tally; delete t._tips;
+  }
+  return acc;
+}
+
+/* ====================================================== classification ==== */
+/* Port of src/render/classification.ts. */
+
+function buildBreaks(values, method, classCount, manualText) {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (!finite.length) return { breaks: [], min: 0, max: 0, classCount: 0 };
+  const sorted = finite.slice().sort((a, b) => a - b);
+  const min = sorted[0], max = sorted[sorted.length - 1];
+  const k = clamp(Math.floor(classCount || 5), 2, 7);
+  if (min === max) return { breaks: [], min, max, classCount: 1 };
+
+  if (method === 'manual') {
+    const parsed = String(manualText || '').split(/[\s,;]+/).map(Number)
+      .filter(Number.isFinite).sort((a, b) => a - b);
+    if (parsed.length) return { breaks: parsed, min, max, classCount: parsed.length + 1 };
+  }
+  if (method === 'equal') {
+    const step = (max - min) / k;
+    const breaks = [];
+    for (let i = 1; i < k; i++) breaks.push(min + step * i);
+    return { breaks, min, max, classCount: k };
+  }
+  // quantile — interpolated order statistics, then dedupe (heavily tied data
+  // collapses to fewer effective classes and the legend should say so).
+  const breaks = [];
+  for (let i = 1; i < k; i++) {
+    const q = (i / k) * (sorted.length - 1);
+    const lo = Math.floor(q), hi = Math.ceil(q);
+    breaks.push(lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (q - lo));
+  }
+  const cleaned = [];
+  for (const v of breaks) if (!cleaned.length || v > cleaned[cleaned.length - 1]) cleaned.push(v);
+  return { breaks: cleaned, min, max, classCount: cleaned.length + 1 };
+}
+
+function classIndex(breaks, value) {
+  for (let i = 0; i < breaks.length; i++) if (value < breaks[i]) return i;
+  return breaks.length;
+}
+
+function makeLegendClasses(breaks, colors) {
+  if (breaks.classCount <= 0) return [];
+  if (breaks.classCount === 1) return [{ color: colors[0] || '#999999', from: breaks.min, to: breaks.max }];
+  const edges = [breaks.min, ...breaks.breaks, breaks.max];
+  const out = [];
+  for (let i = 0; i < breaks.classCount; i++) {
+    out.push({ color: colors[Math.min(colors.length - 1, i)], from: edges[i], to: edges[i + 1] });
+  }
+  return out;
+}
+
+/* ==================================================== anchors / geometry === */
+/* Port of src/render/labelPlacement.ts. */
+
+function ringArea(ring) {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    a += (ring[j][0] - ring[i][0]) * (ring[i][1] + ring[j][1]);
+  }
+  return Math.abs(a / 2);
+}
+
+function collectRings(geometry, largestPartOnly, avoidHoles) {
+  if (!geometry) return [];
+  if (geometry.type === 'Polygon') {
+    const rings = geometry.coordinates;
+    return avoidHoles ? rings : [rings[0]];
+  }
+  if (geometry.type === 'MultiPolygon') {
+    const polys = geometry.coordinates;
+    if (!polys.length) return [];
+    let chosen = polys[0];
+    if (largestPartOnly) {
+      let best = -Infinity;
+      for (const p of polys) { const a = ringArea(p[0]); if (a > best) { best = a; chosen = p; } }
+    }
+    return avoidHoles ? chosen : [chosen[0]];
+  }
+  return [];
+}
+
+/**
+ * Area-weighted centroid first — that's what a reader intuits as "the middle"
+ * — and polylabel (pole of inaccessibility) only when the centroid falls
+ * outside the ring or inside a hole. Keeps elongated states visually centred
+ * without breaking L-shaped ones.
+ */
+function pickAnchor(geometry, { largestPartOnly = true, avoidHoles = true, virtualHoles = null } = {}) {
+  const rings = collectRings(geometry, largestPartOnly, avoidHoles);
+  if (!rings.length) return null;
+  const outer = rings[0];
+  if (!outer || outer.length < 3) return null;
+  const holes = [...rings.slice(1), ...((virtualHoles || []).filter((r) => r && r.length >= 3))];
+
+  const c = d3poly.polygonCentroid(outer);
+  if (Number.isFinite(c[0]) && Number.isFinite(c[1]) &&
+      d3poly.polygonContains(outer, c) && !holes.some((h) => d3poly.polygonContains(h, c))) {
+    return [c[0], c[1]];
+  }
+  try {
+    const [x, y] = polylabel([outer, ...holes], 1.0);
+    if (Number.isFinite(x) && Number.isFinite(y)) return [x, y];
+  } catch (e) { /* fall through to the vertex mean */ }
+  let sx = 0, sy = 0;
+  for (const [x, y] of outer) { sx += x; sy += y; }
+  return [sx / outer.length, sy / outer.length];
+}
+
+function fitsInside(bbox, anchor, width, height) {
+  const [minX, minY, maxX, maxY] = bbox;
+  return anchor[0] - width / 2 >= minX && anchor[0] + width / 2 <= maxX &&
+         anchor[1] - height / 2 >= minY && anchor[1] + height / 2 <= maxY;
+}
+
+function largestProjectedOuterRing(geometry, projection) {
+  let candidate = null;
+  if (!geometry) return null;
+  if (geometry.type === 'Polygon') candidate = geometry.coordinates[0];
+  else if (geometry.type === 'MultiPolygon') {
+    let best = -Infinity;
+    for (const poly of geometry.coordinates) {
+      const a = ringArea(poly[0]);
+      if (a > best) { best = a; candidate = poly[0]; }
+    }
+  }
+  if (!candidate) return null;
+  const out = [];
+  for (const c of candidate) { const p = projection(c); if (p) out.push(p); }
+  return out;
+}
+
+/** PCA on the projected outer ring → the polygon's long-axis angle, clamped
+ *  to [-90, 90] so text stays right-side-up. */
+function principalAxisAngleDeg(geometry, projection) {
+  const ring = largestProjectedOuterRing(geometry, projection);
+  if (!ring || ring.length < 3) return 0;
+  let mx = 0, my = 0;
+  for (const [x, y] of ring) { mx += x; my += y; }
+  mx /= ring.length; my /= ring.length;
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const [x, y] of ring) { const dx = x - mx, dy = y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+  let deg = (0.5 * Math.atan2(2 * sxy, sxx - syy) * 180) / Math.PI;
+  while (deg > 90) deg -= 180;
+  while (deg < -90) deg += 180;
+  return deg;
+}
+
+/** Outer rings of sibling features fully enclosed by this one (Vatican inside
+ *  Lazio, Lesotho inside South Africa). Treated as virtual holes so the label
+ *  lands in the surrounding ring instead of on top of the enclave. */
+function buildVirtualHoles(features, pcodeKey) {
+  const out = new Map();
+  if (features.length > 400) return out;   // O(n²) guard for very large uploads
+  const boxes = features.map((f) => {
+    const rings = collectAllOuterRings(f.geometry);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const r of rings) for (const [x, y] of r) {
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    return { f, rings, box: [minX, minY, maxX, maxY] };
+  });
+  for (const a of boxes) {
+    const holes = [];
+    for (const b of boxes) {
+      if (a === b) continue;
+      const [aX0, aY0, aX1, aY1] = a.box, [bX0, bY0, bX1, bY1] = b.box;
+      if (!(bX0 >= aX0 && bY0 >= aY0 && bX1 <= aX1 && bY1 <= aY1)) continue;
+      const outer = a.rings[0];
+      if (!outer || outer.length < 3) continue;
+      const c = b.rings[0] && d3poly.polygonCentroid(b.rings[0]);
+      if (c && d3poly.polygonContains(outer, c)) holes.push(b.rings[0]);
+    }
+    if (holes.length) out.set(a.f.properties[pcodeKey], holes);
+  }
+  return out;
+}
+function collectAllOuterRings(geometry) {
+  if (!geometry) return [];
+  if (geometry.type === 'Polygon') return [geometry.coordinates[0]];
+  if (geometry.type === 'MultiPolygon') return geometry.coordinates.map((p) => p[0]);
+  return [];
+}
+
+/* ============================================================= renderers === */
+
+/** d3.geoMercator + fitExtent — good for country / sub-national extents and
+ *  free of any dependency on a global projection choice. */
+function buildProjection(featureCollection, width, height, padding) {
+  const proj = d3geo.geoMercator();
+  const inner = [[padding, padding],
+    [Math.max(padding + 1, width - padding), Math.max(padding + 1, height - padding)]];
+  try { proj.fitExtent(inner, featureCollection); } catch (e) { /* degenerate input */ }
+  return { projection: proj, path: d3geo.geoPath(proj) };
+}
+
+function renderChoropleth(layer, path, rows, cls) {
+  clear(layer);
+  const nodes = [];
+  for (const r of rows) {
+    const d = path(r.feature);
+    if (!d) continue;
+    const p = sel('path', { class: cls, d, fill: r.fill, 'fill-opacity': r.fillOpacity,
+      'data-pcode': r.pcode || '', 'vector-effect': 'non-scaling-stroke' });
+    p.__row = r;
+    layer.appendChild(p);
+    nodes.push(p);
+  }
+  return nodes;
+}
+
+function applyBorders(adm1Layer, adm2Layer, st) {
+  for (const p of adm1Layer.children) {
+    p.setAttribute('stroke', st.stateColor);
+    p.setAttribute('stroke-width', st.stateWidth);
+    p.setAttribute('stroke-opacity', p.__dim ? Math.min(st.stateOpacity, 0.35) : st.stateOpacity);
+  }
+  for (const p of adm2Layer.children) {
+    p.setAttribute('stroke', st.localityColor);
+    p.setAttribute('stroke-width', st.localityWidth);
+    p.setAttribute('stroke-opacity', st.localityOpacity);
+  }
+}
+
+/** Blurred copy of the outline behind every other layer. Stripped from the
+ *  SVG export — feGaussianBlur rasterises unpredictably downstream. */
+function renderGlow(layer, path, features, st) {
+  clear(layer);
+  if (!st.countryGlowShow || !features.length) return;
+  const radius = Math.max(0, st.countryGlowRadius);
+  const id = 'cs-glow';
+  const defs = sel('defs');
+  const filter = sel('filter', { id, x: '-50%', y: '-50%', width: '200%', height: '200%' });
+  filter.appendChild(sel('feGaussianBlur', { stdDeviation: Math.max(0.5, radius / 2) }));
+  defs.appendChild(filter);
+  layer.appendChild(defs);
+  const d = path({ type: 'FeatureCollection', features }) || '';
+  layer.appendChild(sel('path', { d, fill: st.countryGlowColor, stroke: st.countryGlowColor,
+    'stroke-width': Math.max(2, radius / 2), filter: `url(#${id})`, opacity: st.countryGlowOpacity,
+    'pointer-events': 'none' }));
+}
+
+/* ------------------------------------------------------------- bubbles ---- */
+/* Port of src/render/bubbles.ts: √-scaled radius between min/max px, largest
+ * painted first so small bubbles stay on top, counter-zoom transform so the
+ * on-screen radius is stable while zooming. */
+
+function applyCounterZoomTransform(g, zoom) {
+  const x = parseFloat(g.getAttribute('data-anchor-x') || '0');
+  const y = parseFloat(g.getAttribute('data-anchor-y') || '0');
+  const s = g.getAttribute('data-constant-size') === '1' && zoom > 0 ? 1 / zoom : 1;
+  g.setAttribute('transform', s !== 1 ? `translate(${x},${y}) scale(${s})` : `translate(${x},${y})`);
+}
+function updateCounterZoom(layer, zoom) {
+  if (!layer) return;
+  for (const g of layer.querySelectorAll('g[data-anchor-x]')) applyCounterZoomTransform(g, zoom);
+}
+
+function renderBubbles(layer, projection, features, lookup, pcodeKey, st, zoom) {
+  clear(layer);
+  if (!st.show) return null;
+  layer.setAttribute('pointer-events', 'none');
+
+  const valued = [];
+  for (const f of features) {
+    const code = f.properties?.[pcodeKey];
+    if (!code) continue;
+    const datum = lookup.get(code);
+    if (!datum || datum.bubbleSize == null) continue;
+    if (st.zeroAsBlank && datum.bubbleSize === 0) continue;
+    const anchorGeo = pickAnchor(f.geometry, { largestPartOnly: true, avoidHoles: false });
+    if (!anchorGeo) continue;
+    const p = projection(anchorGeo);
+    if (!p) continue;
+    valued.push({ datum, anchor: p });
+  }
+  if (!valued.length) return null;
+
+  const values = valued.map((v) => v.datum.bubbleSize);
+  const minV = Math.min(...values), maxV = Math.max(...values);
+  const scale = (v) => {
+    if (maxV === minV) return (st.minRadius + st.maxRadius) / 2;
+    const t = Math.sqrt(Math.max(0, v - minV)) / Math.sqrt(Math.max(1e-9, maxV - minV));
+    return st.minRadius + (st.maxRadius - st.minRadius) * t;
+  };
+  valued.sort((a, b) => b.datum.bubbleSize - a.datum.bubbleSize);
+
+  const anchors = new Map();
+  for (const v of valued) {
+    const r = scale(v.datum.bubbleSize);
+    const g = sel('g', { class: 'cs-bubble', 'data-anchor-x': v.anchor[0], 'data-anchor-y': v.anchor[1] });
+    if (st.constantSize) g.setAttribute('data-constant-size', '1');
+    applyCounterZoomTransform(g, zoom);
+    g.appendChild(sel('circle', { cx: 0, cy: 0, r, fill: st.fillColor, 'fill-opacity': st.opacity,
+      stroke: st.strokeColor, 'stroke-width': st.strokeWidth }));
+    layer.appendChild(g);
+    anchors.set(v.datum.pcode, { x: v.anchor[0], y: v.anchor[1], r });
+  }
+  return { minValue: minV, maxValue: maxV, scale, anchors };
+}
+
+/* -------------------------------------------------------------- glyphs ---- */
+/* Port of src/render/glyphs.ts. */
+
+function arcPath(cx, cy, r0, r1, a0, a1) {
+  const x0o = cx + r1 * Math.cos(a0), y0o = cy + r1 * Math.sin(a0);
+  const x1o = cx + r1 * Math.cos(a1), y1o = cy + r1 * Math.sin(a1);
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  if (r0 <= 0) return `M ${cx},${cy} L ${x0o},${y0o} A ${r1},${r1} 0 ${large} 1 ${x1o},${y1o} Z`;
+  const x0i = cx + r0 * Math.cos(a1), y0i = cy + r0 * Math.sin(a1);
+  const x1i = cx + r0 * Math.cos(a0), y1i = cy + r0 * Math.sin(a0);
+  return `M ${x0o},${y0o} A ${r1},${r1} 0 ${large} 1 ${x1o},${y1o} L ${x0i},${y0i} ` +
+         `A ${r0},${r0} 0 ${large} 0 ${x1i},${y1i} Z`;
+}
+/** Outer circle minus inner circle, even-odd filled. Needed because a donut
+ *  arc that starts and ends at the same point renders nothing. */
+function annulusPath(cx, cy, rIn, rOut) {
+  return `M ${cx - rOut},${cy} A ${rOut},${rOut} 0 1 0 ${cx + rOut},${cy} A ${rOut},${rOut} 0 1 0 ${cx - rOut},${cy} Z ` +
+         `M ${cx - rIn},${cy} A ${rIn},${rIn} 0 1 1 ${cx + rIn},${cy} A ${rIn},${rIn} 0 1 1 ${cx - rIn},${cy} Z`;
+}
+
+function drawPie(g, radius, values, st) {
+  const total = values.reduce((a, b) => a + Math.max(0, b), 0);
+  if (total <= 0) return;
+  const innerRatio = st.type === 'donut' ? clamp(st.donutInnerRatio || 0.5, 0, 0.85) : 0;
+  const rIn = radius * innerRatio;
+  const common = { 'fill-opacity': st.opacity, stroke: st.stroke, 'stroke-width': st.strokeWidth };
+
+  // Single positive measure: a full-circle arc degenerates to nothing, so draw
+  // the circle (or annulus) directly.
+  const positives = values.map((v, i) => ({ v: Math.max(0, v), i })).filter((p) => p.v > 0);
+  if (positives.length === 1) {
+    const fill = st.colors[positives[0].i % st.colors.length] || '#888';
+    g.appendChild(rIn > 0
+      ? sel('path', { d: annulusPath(0, 0, rIn, radius), 'fill-rule': 'evenodd', fill, ...common })
+      : sel('circle', { cx: 0, cy: 0, r: radius, fill, ...common }));
+    return;
+  }
+  let a0 = -Math.PI / 2;   // 12 o'clock
+  for (let i = 0; i < values.length; i++) {
+    const v = Math.max(0, values[i]);
+    if (v <= 0) continue;
+    const a1 = a0 + (v / total) * Math.PI * 2;
+    g.appendChild(sel('path', { d: arcPath(0, 0, rIn, radius, a0, a1),
+      fill: st.colors[i % st.colors.length] || '#888', ...common }));
+    a0 = a1;
+  }
+}
+
+/** One circle per measure, radius ∝ √(value/peak) so AREA is proportional —
+ *  same convention as the bubble layer. Largest first. */
+function drawConcentric(g, outerRadius, values, st) {
+  const positives = values.map((v) => Math.max(0, v));
+  const peak = Math.max(...positives, 0);
+  if (peak <= 0) return;
+  const indexed = positives.map((v, i) => ({ v, i })).filter((p) => p.v > 0).sort((a, b) => b.v - a.v);
+  for (const { v, i } of indexed) {
+    const r = outerRadius * Math.sqrt(v / peak);
+    if (r <= 0) continue;
+    g.appendChild(sel('circle', { cx: 0, cy: 0, r, fill: st.colors[i % st.colors.length] || '#888',
+      'fill-opacity': st.opacity, stroke: st.stroke, 'stroke-width': st.strokeWidth }));
+  }
+}
+
+function drawColumn(g, totalHeight, values, st) {
+  const positives = values.map((v) => Math.max(0, v));
+  const peak = Math.max(...positives, 0);
+  if (peak <= 0) return;
+  const colW = Math.max(2, totalHeight * 0.18);
+  const gap = Math.max(1, totalHeight * 0.08);
+  const totalW = positives.length * colW + (positives.length - 1) * gap;
+  const x0 = -totalW / 2, baseline = totalHeight / 2;
+  for (let i = 0; i < positives.length; i++) {
+    const h = (positives[i] / peak) * totalHeight;
+    if (h <= 0) continue;
+    g.appendChild(sel('rect', { x: x0 + i * (colW + gap), y: baseline - h, width: colW, height: h,
+      fill: st.colors[i % st.colors.length] || '#888', 'fill-opacity': st.opacity,
+      stroke: st.stroke, 'stroke-width': st.strokeWidth }));
+  }
+}
+
+function renderGlyphs(layer, projection, features, lookup, pcodeKey, st, zoom) {
+  clear(layer);
+  if (!st.show) return null;
+  layer.setAttribute('pointer-events', 'none');
+
+  const valued = [];
+  for (const f of features) {
+    const code = f.properties?.[pcodeKey];
+    if (!code) continue;
+    const datum = lookup.get(code);
+    if (!datum || !datum.glyphValues?.length) continue;
+    const vals = st.zeroAsBlank ? datum.glyphValues.map((v) => (v === 0 ? 0 : v)) : datum.glyphValues;
+    const total = vals.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+    if (total <= 0) continue;
+    const anchorGeo = pickAnchor(f.geometry, { largestPartOnly: true, avoidHoles: false });
+    if (!anchorGeo) continue;
+    const p = projection(anchorGeo);
+    if (!p) continue;
+    valued.push({ datum, anchor: p, total, vals });
+  }
+  if (!valued.length) return { anchors: new Map() };
+
+  const minT = Math.min(...valued.map((v) => v.total));
+  const maxT = Math.max(...valued.map((v) => v.total));
+  const scale = (t) => {
+    if (!st.scaleByTotal || maxT === minT) return st.maxSize;
+    const k = Math.sqrt(Math.max(0, t - minT)) / Math.sqrt(Math.max(1e-9, maxT - minT));
+    return st.minSize + (st.maxSize - st.minSize) * k;
+  };
+  valued.sort((a, b) => b.total - a.total);
+
+  const anchors = new Map();
+  for (const v of valued) {
+    const size = scale(v.total);
+    const g = sel('g', { class: 'cs-glyph', 'data-anchor-x': v.anchor[0], 'data-anchor-y': v.anchor[1] });
+    if (st.constantSize) g.setAttribute('data-constant-size', '1');
+    applyCounterZoomTransform(g, zoom);
+    if (st.type === 'pie' || st.type === 'donut') drawPie(g, size, v.vals, st);
+    else if (st.type === 'concentric') drawConcentric(g, size, v.vals, st);
+    else drawColumn(g, size, v.vals, st);
+    layer.appendChild(g);
+    anchors.set(v.datum.pcode, { x: v.anchor[0], y: v.anchor[1],
+      size: st.type === 'column' ? size / 2 : size });
+  }
+  return { anchors };
+}
+
+/* -------------------------------------------------------------- labels ---- */
+/* Port of src/render/labels.ts — anchor, compose lines, fit-to-shape, halo. */
+
+const approxTextWidth = (text, fontSize) => text.length * fontSize * 0.55;
+
+function abbreviate(text, maxPx, fontSize) {
+  if (!text) return text;
+  const maxChars = Math.max(3, Math.floor(maxPx / (fontSize * 0.55)));
+  return text.length <= maxChars ? text : text.slice(0, Math.max(1, maxChars - 1)) + '…';
+}
+function wrapWords(text, maxChars) {
+  const out = [];
+  let cur = '';
+  for (const w of text.split(/\s+/)) {
+    if (!cur) { cur = w; continue; }
+    if (cur.length + 1 + w.length > maxChars) { out.push(cur); cur = w; } else cur += ' ' + w;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+function valueSourceFlags(s) {
+  switch (s) {
+    case 'bubble': return { choropleth: false, bubble: true, custom: false };
+    case 'both': return { choropleth: true, bubble: true, custom: false };
+    case 'custom': return { choropleth: false, bubble: false, custom: true };
+    case 'choropleth_custom': return { choropleth: true, bubble: false, custom: true };
+    case 'bubble_custom': return { choropleth: false, bubble: true, custom: true };
+    case 'all': return { choropleth: true, bubble: true, custom: true };
+    default: return { choropleth: true, bubble: false, custom: false };
+  }
+}
+
+function composeLines(label, st) {
+  const want = valueSourceFlags(st.valueSource);
+  const colorTxt = label.value != null ? fmtNumber(label.value, st.decimals, st.format) : '';
+  const bubbleTxt = label.bubbleValue != null ? fmtNumber(label.bubbleValue, st.decimals, st.format) : '';
+  const customTxt = label.value2 != null ? fmtNumber(label.value2, st.decimals, st.format) : '';
+
+  let valueLines = [];
+  if (want.choropleth && colorTxt) valueLines.push({ text: colorTxt, kind: 'value' });
+  if (want.bubble && bubbleTxt) valueLines.push({ text: bubbleTxt, kind: 'bubble_value' });
+  if (want.custom && customTxt) valueLines.push({ text: customTxt, kind: 'custom_value' });
+  // The picked source isn't bound — fall back to whatever IS, so a
+  // "Value only" label never silently vanishes.
+  if (!valueLines.length) {
+    if (colorTxt) valueLines.push({ text: colorTxt, kind: 'value' });
+    if (bubbleTxt) valueLines.push({ text: bubbleTxt, kind: 'bubble_value' });
+    if (customTxt) valueLines.push({ text: customTxt, kind: 'custom_value' });
+  }
+
+  const rawName = (st.nameSource === 'labelText1' && label.nameOverride) ? label.nameOverride : (label.name || '');
+  let nameLines = [rawName];
+  if (st.wordsOnSeparateLines && nameLines[0]) nameLines = nameLines[0].split(/\s+/);
+  const named = nameLines.filter(Boolean).map((t) => ({ text: t, kind: 'name' }));
+
+  if (st.content === 'value') return valueLines;
+  if (st.content === 'name') return named;
+  return [...named, ...valueLines];
+}
+
+function applyLabelTransform(g, zoom) {
+  const num = (a) => parseFloat(g.getAttribute(a) || '0');
+  const x = num('data-anchor-x'), y = num('data-anchor-y'), dy = num('data-anchor-dy');
+  const rot = num('data-rotation'), padX = num('data-pad-x'), padY = num('data-pad-y');
+  const s = g.getAttribute('data-constant-size') === '1' && zoom > 0 ? 1 / zoom : 1;
+  // padX / padY are screen pixels; divide by zoom so the offset between the
+  // label and its bubble survives the map group's scale().
+  const px = x + (zoom > 0 ? padX / zoom : 0);
+  const py = y + dy + (zoom > 0 ? padY / zoom : 0);
+  const parts = [`translate(${px},${py})`];
+  if (s !== 1) parts.push(`scale(${s})`);
+  if (rot) parts.push(`rotate(${rot})`);
+  g.setAttribute('transform', parts.join(' '));
+}
+function updateLabelTransforms(layer, zoom) {
+  if (!layer) return;
+  for (const g of layer.querySelectorAll('g.cs-label')) applyLabelTransform(g, zoom);
+}
+
+function pathBBox(path, feature) {
+  try {
+    const b = path.bounds(feature);
+    return b ? [b[0][0], b[0][1], b[1][0], b[1][1]] : null;
+  } catch (e) { return null; }
+}
+
+function renderLabels(layer, projection, path, labels, st, opts = {}) {
+  clear(layer);
+  if (!st.show || !labels.length) return;
+  const { overrides = null, zoom = 1, forbiddenPolygon = null, virtualHoles = null, idPrefix = 'l' } = opts;
+  const fontStyle = st.italic ? 'italic' : 'normal';
+  const fontWeight = st.bold ? '600' : '400';
+
+  let n = 0;
+  for (const label of labels) {
+    let px, py;
+    const override = label.pcode ? overrides?.get(label.pcode) : null;
+    if (override) { px = override.x; py = override.y; }
+    else {
+      const anchorGeo = pickAnchor(label.feature.geometry, {
+        largestPartOnly: st.labelLargestPart, avoidHoles: st.avoidHoles,
+        virtualHoles: label.pcode ? virtualHoles?.get(label.pcode) : null });
+      if (!anchorGeo) continue;
+      const p = projection(anchorGeo);
+      if (!p) continue;
+      px = p[0]; py = p[1];
+    }
+
+    const lines = composeLines(label, st);
+    if (!lines.length) continue;
+
+    const g = sel('g', { class: 'cs-label', 'data-anchor-x': px, 'data-anchor-y': py,
+      'data-anchor-dy': 0, 'data-rotation': 0 });
+    if (st.constantSize) g.setAttribute('data-constant-size', '1');
+    let padX = override?.padX || 0, padY = override?.padY || 0;
+    // Multi-line labels anchored to a bubble must shift further out so the
+    // edge nearest the bubble sits where a single line would have.
+    if (padY && lines.length > 1) padY += Math.sign(padY) * ((lines.length - 1) / 2) * (st.fontSize * 1.15);
+    if (padX) g.setAttribute('data-pad-x', padX);
+    if (padY) g.setAttribute('data-pad-y', padY);
+    applyLabelTransform(g, zoom);
+
+    let fontSize = st.fontSize;
+    let rendered = lines.slice();
+    let fits = true;
+    const polyBBox = override ? null : pathBBox(path, label.feature);
+    if (polyBBox) {
+      let attempts = st.reduceFontSize ? 4 : 1;
+      let stacked = false;
+      while (attempts-- > 0) {
+        const longest = rendered.reduce((m, l) => Math.max(m, approxTextWidth(l.text, fontSize)), 0);
+        fits = fitsInside(polyBBox, [px, py], longest, rendered.length * fontSize * 1.15);
+        if (st.allowOverrun || fits) break;
+        if (st.stackWhenNeeded && !stacked) {
+          stacked = true;
+          const maxChars = Math.max(6, Math.floor((polyBBox[2] - polyBBox[0]) / (fontSize * 0.55)));
+          rendered = rendered.flatMap((line) => (line.kind !== 'name' || !line.text.includes(' '))
+            ? [line] : wrapWords(line.text, maxChars).map((t) => ({ text: t, kind: line.kind })));
+          continue;   // re-test the stacked layout before shrinking
+        }
+        if (st.abbreviate) {
+          rendered = rendered.map((l) => ({ ...l, text: abbreviate(l.text, polyBBox[2] - polyBBox[0], fontSize) }));
+        }
+        fontSize = Math.max(7, fontSize - 1);
+      }
+      const longest = rendered.reduce((m, l) => Math.max(m, approxTextWidth(l.text, fontSize)), 0);
+      fits = fitsInside(polyBBox, [px, py], longest, rendered.length * fontSize * 1.15);
+    }
+
+    // Hide-on-overflow drops labels that still spill, and (in drill view) any
+    // label whose ANCHOR sits inside the focused polygon. Testing the anchor
+    // rather than the bbox lets a neighbour keep its label when only the text's
+    // right edge pokes across.
+    let crossesForbidden = false;
+    if (forbiddenPolygon && forbiddenPolygon.length >= 3) {
+      crossesForbidden = d3poly.polygonContains(forbiddenPolygon, [px, py]);
+    }
+    if (st.hideOnOverflow && ((polyBBox && !fits) || crossesForbidden)) continue;
+
+    const lineHeight = fontSize * 1.15;
+    const startY = -((rendered.length - 1) / 2) * lineHeight;
+    const bbox = polyBBox || pathBBox(path, label.feature);
+    let rotation = 0, dy = 0;
+    if (st.placement === 'straight' || st.placement === 'curved') {
+      rotation = principalAxisAngleDeg(label.feature.geometry, projection);
+    }
+    if (st.placement === 'boundary' && !override && bbox) dy = -((bbox[3] - bbox[1]) / 2) * 0.55;
+    if (rotation || dy) {
+      g.setAttribute('data-anchor-dy', dy);
+      g.setAttribute('data-rotation', rotation);
+      applyLabelTransform(g, zoom);
+    }
+    const useCurve = st.placement === 'curved' && bbox && rendered.some((l) => l.kind === 'name');
+    const colorFor = { name: st.color, value: st.valueColor, bubble_value: st.bubbleValueColor,
+      custom_value: st.customValueColor };
+
+    for (let i = 0; i < rendered.length; i++) {
+      const line = rendered[i];
+      const yOffset = startY + i * lineHeight + fontSize * 0.35;
+      const textAttrs = { 'font-family': st.fontFamily, 'font-size': fontSize, 'font-style': fontStyle,
+        'font-weight': fontWeight, fill: colorFor[line.kind] };
+      if (st.spreadCharacters) textAttrs['letter-spacing'] = '1.5px';
+      if (st.haloWidth > 0) {
+        Object.assign(textAttrs, { stroke: st.haloColor, 'stroke-width': st.haloWidth,
+          'stroke-linejoin': 'round', 'paint-order': 'stroke fill' });
+      }
+      // Curved rendering applies to the name only — numbers stay straight.
+      if (useCurve && line.kind === 'name') {
+        const w = approxTextWidth(line.text, fontSize) * 1.05;
+        const arc = Math.max(2, Math.min((bbox[3] - bbox[1]) * 0.18, w * 0.12));
+        const pid = `cs-curve-${idPrefix}-${n}-${i}`;
+        g.appendChild(sel('path', { id: pid, fill: 'none', stroke: 'none',
+          d: `M ${-w / 2},${yOffset} Q 0,${yOffset - arc} ${w / 2},${yOffset}` }));
+        const t = sel('text', textAttrs);
+        const tp = sel('textPath', { href: `#${pid}`, startOffset: '50%', 'text-anchor': 'middle' });
+        tp.textContent = line.text;
+        t.appendChild(tp);
+        g.appendChild(t);
+        continue;
+      }
+      const t = sel('text', { ...textAttrs, 'text-anchor': 'middle', y: yOffset });
+      t.textContent = line.text;
+      g.appendChild(t);
+    }
+    layer.appendChild(g);
+    n++;
+  }
+}
+
+/** Screen-space label anchors derived from bubble / glyph positions. Bubbles
+ *  use padX / padY so the offset survives zoom; glyphs are placed outright. */
+function buildOverlayLabelOverrides(anchors, placement, fontSize, kind) {
+  const out = new Map();
+  const pad = 4, lineHeight = fontSize * 1.15, hGap = 36;
+  for (const [pcode, a] of anchors) {
+    const extent = kind === 'bubble' ? a.r : a.size;
+    let dx = 0, dy = 0;
+    switch (placement) {
+      case 'below': dy = extent + lineHeight / 2 + pad; break;
+      case 'left': dx = -(extent + hGap + pad); break;
+      case 'right': dx = extent + hGap + pad; break;
+      case 'center': break;
+      default: dy = -(extent + lineHeight / 2 + pad);
+    }
+    if (kind === 'bubble') out.set(pcode, { x: a.x, y: a.y, padX: dx, padY: dy });
+    else out.set(pcode, { x: a.x + dx, y: a.y + dy });
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------ scale bar --- */
+/* Port of src/render/scaleBar.ts — measures px-per-km at the viewport centre
+ * so the bar stays honest at any latitude and any zoom level. */
+
+const KM_TO_MI = 0.621371;
+function niceRound(v) {
+  if (!Number.isFinite(v) || v <= 0) return 1;
+  const exp = Math.floor(Math.log10(v));
+  const f = v / Math.pow(10, exp);
+  const nice = f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10;
+  return nice * Math.pow(10, exp);
+}
+function formatNice(v) {
+  if (v >= 1000) return `${(v / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k`;
+  if (v >= 10) return String(Math.round(v));
+  return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+function renderScaleBar(layer, projection, w, h, zoom, st) {
+  clear(layer);
+  if (!st.show || !projection.invert) return null;
+  const centre = projection.invert([w / 2, h / 2]);
+  if (!centre) return null;
+  const [lon, lat] = centre;
+  const kmPerDegLon = 111.32 * Math.cos((lat * Math.PI) / 180);
+  if (!Number.isFinite(kmPerDegLon) || kmPerDegLon <= 0) return null;
+  const east = projection([lon + 1, lat]), here = projection([lon, lat]);
+  if (!east || !here) return null;
+  const pxPerDegLon = Math.hypot(east[0] - here[0], east[1] - here[1]);
+  if (!Number.isFinite(pxPerDegLon) || pxPerDegLon <= 0) return null;
+  const pxPerKm = (pxPerDegLon / kmPerDegLon) * (zoom || 1);
+
+  const targetPx = clamp(w * 0.18, 60, 180);
+  const factor = st.units === 'mi' ? KM_TO_MI : 1;
+  const niceUnits = niceRound((targetPx / pxPerKm) * factor);
+  const barPx = (niceUnits / factor) * pxPerKm;
+  if (!Number.isFinite(barPx) || barPx <= 8) return null;
+
+  const fontSize = st.fontSize, labelGap = 4, barH = 6, tickH = 10;
+  const box = { width: barPx + 2, height: tickH + labelGap + fontSize + 4 };
+  const margin = 12;
+  let x = margin, y = margin;
+  if (st.position === 'topRight' || st.position === 'bottomRight') x = w - margin - box.width;
+  if (st.position === 'bottomLeft' || st.position === 'bottomRight') y = h - margin - box.height;
+
+  const root = sel('g', { class: 'cs-scalebar', transform: `translate(${x},${y})` });
+  const half = barPx / 2;
+  root.appendChild(sel('rect', { x: 0, y: tickH - barH, width: half, height: barH,
+    fill: '#ffffff', stroke: st.color, 'stroke-width': 1 }));
+  root.appendChild(sel('rect', { x: half, y: tickH - barH, width: barPx - half, height: barH,
+    fill: st.color, stroke: st.color, 'stroke-width': 1 }));
+  for (const tx of [0, half, barPx]) {
+    root.appendChild(sel('line', { x1: tx, y1: 0, x2: tx, y2: tickH, stroke: st.color, 'stroke-width': 1 }));
+  }
+  const t0 = sel('text', { x: 0, y: tickH + labelGap + fontSize, 'font-size': fontSize,
+    'text-anchor': 'start', fill: st.color, 'font-family': 'inherit' });
+  t0.textContent = '0';
+  const t1 = sel('text', { x: barPx, y: tickH + labelGap + fontSize, 'font-size': fontSize,
+    'text-anchor': 'end', fill: st.color, 'font-family': 'inherit' });
+  t1.textContent = `${formatNice(niceUnits)} ${st.units === 'mi' ? 'mi' : 'km'}`;
+  root.append(t0, t1);
+  layer.appendChild(root);
+  return { width: box.width, height: box.height, position: st.position };
+}
+
+/* =============================================================== legends === */
+/* Port of src/render/legend.ts. Five legends; any that share a corner are
+ * stacked inside one rounded container. */
+
+const SIZE_SCALE = { minimal: 0.6, small: 0.8, medium: 1.0, large: 1.2 };
+const legendTextWidth = (text, fontSize) => String(text).length * fontSize * 0.6;
+
+function legendText(parent, x, y, size, fill, text, extra = {}) {
+  const t = sel('text', { x, y, 'font-size': size, fill, 'font-family': 'inherit', ...extra });
+  t.textContent = text;
+  parent.appendChild(t);
+  return t;
+}
+
+function drawValueLegend(parent, v, header, item) {
+  const scale = SIZE_SCALE[v.size] || 1;
+  const swatch = item.swatchSize > 0 ? item.swatchSize : 14 * scale;
+  const fontSize = item.fontSize > 0 ? item.fontSize : 11 * scale;
+  const titleSize = header.fontSize > 0 ? header.fontSize : 12 * scale;
+  const gap = 4;
+  if (v.title) legendText(parent, 0, titleSize, titleSize, header.color, v.title,
+    { 'font-weight': header.bold ? 600 : 400 });
+  let y = titleSize + 6;
+
+  // "Minimal" collapses a numeric ramp to a low / high pair.
+  const numericOnly = v.classes.length > 0 && v.classes.every((c) => c.label == null);
+  if (v.size === 'minimal' && numericOnly && v.classes.length >= 2) {
+    const pairs = [{ c: v.classes[0], m: '−' }, { c: v.classes[v.classes.length - 1], m: '+' }];
+    if (v.orientation === 'horizontal') {
+      let x = 0;
+      const colW = swatch + 6 + Math.ceil(fontSize * 0.9) + 10;
+      for (const { c, m } of pairs) {
+        parent.appendChild(sel('rect', { x, y, width: swatch, height: swatch, fill: c.color, stroke: '#666', 'stroke-width': 0.5 }));
+        legendText(parent, x + swatch + 6, y + swatch * 0.78, fontSize, item.color, m, { 'font-weight': 700 });
+        x += colW;
+      }
+      return;
+    }
+    for (const { c, m } of pairs) {
+      parent.appendChild(sel('rect', { x: 0, y, width: swatch, height: swatch, fill: c.color, stroke: '#666', 'stroke-width': 0.5 }));
+      legendText(parent, swatch + gap, y + swatch * 0.78, fontSize, item.color, m, { 'font-weight': 700 });
+      y += swatch + gap;
+    }
+    return;
+  }
+
+  // Horizontal shows one number per swatch (the class's upper bound — the
+  // neighbouring swatch already conveys the lower one); vertical shows the
+  // whole range.
+  const hLabel = (c) => (c.label != null ? c.label : fmtNumber(c.to, v.decimals, 'auto'));
+  const vLabel = (c) => {
+    if (c.label != null) return c.label;
+    const a = fmtNumber(c.from, v.decimals, 'auto'), b = fmtNumber(c.to, v.decimals, 'auto');
+    return c.from === c.to ? a : `${a} – ${b}`;
+  };
+  if (v.orientation === 'horizontal') {
+    const labels = v.classes.map(hLabel);
+    const widths = labels.map((t) => Math.max(swatch, legendTextWidth(t, fontSize)) + gap * 2);
+    let x = 0;
+    for (let i = 0; i < v.classes.length; i++) {
+      const colW = widths[i];
+      parent.appendChild(sel('rect', { x: x + (colW - swatch) / 2, y, width: swatch, height: swatch,
+        fill: v.classes[i].color, stroke: '#666', 'stroke-width': 0.5 }));
+      legendText(parent, x + colW / 2, y + swatch + fontSize + 2, fontSize, item.color, labels[i],
+        { 'text-anchor': 'middle' });
+      x += colW;
+    }
+    return;
+  }
+  for (const c of v.classes) {
+    parent.appendChild(sel('rect', { x: 0, y, width: swatch, height: swatch, fill: c.color, stroke: '#666', 'stroke-width': 0.5 }));
+    legendText(parent, swatch + gap, y + swatch * 0.75, fontSize, item.color, vLabel(c));
+    y += swatch + gap;
+  }
+}
+
+function drawSwatchLegend(parent, g, header, item, defTitle) {
+  const scale = SIZE_SCALE[g.size] || 1;
+  const swatch = item.swatchSize > 0 ? item.swatchSize : 12 * scale;
+  const fontSize = item.fontSize > 0 ? item.fontSize : 11 * scale;
+  const titleSize = header.fontSize > 0 ? header.fontSize : 12 * scale;
+  const gap = 4;
+  const title = g.title || defTitle;
+  if (title) legendText(parent, 0, titleSize, titleSize, header.color, title, { 'font-weight': header.bold ? 600 : 400 });
+  let y = (title ? titleSize + 6 : 0);
+  if (g.orientation === 'horizontal') {
+    let x = 0;
+    for (const it of g.items) {
+      parent.appendChild(sel('rect', { x, y, width: swatch, height: swatch, fill: it.color, stroke: '#666', 'stroke-width': 0.5 }));
+      legendText(parent, x + swatch + 4, y + swatch * 0.8, fontSize, item.color, it.label);
+      x += swatch + 4 + legendTextWidth(it.label, fontSize) + gap * 2;
+    }
+    return;
+  }
+  for (const it of g.items) {
+    parent.appendChild(sel('rect', { x: 0, y, width: swatch, height: swatch, fill: it.color, stroke: '#666', 'stroke-width': 0.5 }));
+    legendText(parent, swatch + gap, y + swatch * 0.8, fontSize, item.color, it.label);
+    y += swatch + gap;
+  }
+}
+
+/** Values legend — a `#` in each label-value colour beside its column name. */
+function drawValuesLegend(parent, v, header, item) {
+  const scale = SIZE_SCALE[v.size] || 1;
+  const fontSize = item.fontSize > 0 ? item.fontSize : 11 * scale;
+  const titleSize = header.fontSize > 0 ? header.fontSize : 12 * scale;
+  const gap = 6;
+  if (v.title) legendText(parent, 0, titleSize, titleSize, header.color, v.title, { 'font-weight': header.bold ? 600 : 400 });
+  let y = v.title ? titleSize + 6 : 0;
+  const rows = v.items.filter((it) => it && String(it.label).trim());
+  if (v.orientation === 'horizontal') {
+    let x = 0;
+    for (const it of rows) {
+      legendText(parent, x, y + fontSize, fontSize, it.color, '#', { 'font-weight': 700 });
+      legendText(parent, x + fontSize * 0.8 + 4, y + fontSize, fontSize, item.color, it.label);
+      x += fontSize * 0.8 + 4 + Math.max(40, legendTextWidth(it.label, fontSize)) + 14;
+    }
+    return;
+  }
+  for (const it of rows) {
+    legendText(parent, 0, y + fontSize, fontSize, it.color, '#', { 'font-weight': 700 });
+    legendText(parent, fontSize * 0.8 + 4, y + fontSize, fontSize, item.color, it.label);
+    y += fontSize + gap;
+  }
+}
+
+/** Admin levels legend — a stroke sample per level, styled from the Borders
+ *  card so it always mirrors what's drawn. */
+function drawLevelsLegend(parent, lv, header, item) {
+  const scale = SIZE_SCALE[lv.size] || 1;
+  const fontSize = item.fontSize > 0 ? item.fontSize : 11 * scale;
+  const titleSize = header.fontSize > 0 ? header.fontSize : 12 * scale;
+  const sampleLen = item.swatchSize > 0 ? item.swatchSize : 22 * scale;
+  const gap = 6;
+  if (lv.title) legendText(parent, 0, titleSize, titleSize, header.color, lv.title, { 'font-weight': header.bold ? 600 : 400 });
+  let y = lv.title ? titleSize + 6 : 0;
+  const horizontal = lv.orientation === 'horizontal';
+  let x = 0;
+  for (const it of lv.items) {
+    const sampleY = y + fontSize * 0.6;
+    parent.appendChild(sel('line', { x1: x, y1: sampleY, x2: x + sampleLen, y2: sampleY,
+      stroke: it.color, 'stroke-width': Math.max(1, it.width), 'stroke-linecap': 'round' }));
+    legendText(parent, x + sampleLen + 4, y + fontSize, fontSize, item.color, it.label);
+    if (horizontal) x += sampleLen + 4 + Math.max(40, legendTextWidth(it.label, fontSize)) + 12;
+    else y += fontSize + gap;
+  }
+}
+
+function drawBubbleLegend(parent, b, header, item) {
+  const scale = SIZE_SCALE[b.size] || 1;
+  const fontSize = item.fontSize > 0 ? item.fontSize : 11 * scale;
+  const titleSize = header.fontSize > 0 ? header.fontSize : 12 * scale;
+  if (b.title) legendText(parent, 0, titleSize, titleSize, header.color, b.title, { 'font-weight': header.bold ? 600 : 400 });
+  const yStart = (b.title ? titleSize + 8 : 0);
+  const mode = b.size === 'minimal' ? 'compact' : b.orientation;
+  const circle = (cx, cy, r, op) => parent.appendChild(sel('circle', { cx, cy, r,
+    fill: b.fillColor, 'fill-opacity': op, stroke: b.strokeColor }));
+
+  if (mode === 'compact') {
+    const minR = Math.max(2, b.scale(b.minValue));
+    const maxR = Math.max(minR + 1, b.scale(b.maxValue));
+    const baseline = yStart + maxR * 2 + 2;
+    const minCx = maxR;
+    const gap = Math.max(36, fontSize * 3.5);
+    const maxCx = minCx + maxR + gap + maxR;
+    parent.appendChild(sel('line', { x1: minCx + minR + 2, y1: baseline, x2: maxCx - maxR - 2, y2: baseline,
+      stroke: '#888', 'stroke-width': 1 }));
+    for (const tx of [minCx + minR + 2, maxCx - maxR - 2]) {
+      parent.appendChild(sel('line', { x1: tx, y1: baseline - 4, x2: tx, y2: baseline, stroke: '#888', 'stroke-width': 1 }));
+    }
+    circle(minCx, baseline - minR, minR, 0.7);
+    circle(maxCx, baseline - maxR, maxR, 0.5);
+    legendText(parent, minCx, baseline + fontSize + 4, fontSize, item.color, fmtNumber(b.minValue, 0, 'auto'), { 'text-anchor': 'middle' });
+    legendText(parent, maxCx, baseline + fontSize + 4, fontSize, item.color, fmtNumber(b.maxValue, 0, 'auto'), { 'text-anchor': 'middle' });
+    return;
+  }
+  if (mode === 'horizontal') {
+    const min = b.minValue, max = b.maxValue;
+    // Four steps when the range spans an order of magnitude, otherwise three.
+    const steps = max > 0 && min > 0 && max / min >= 10 ? 4 : 3;
+    const stops = [];
+    if (max === min) stops.push(min);
+    else if (steps === 3) stops.push(min, Math.sqrt(Math.max(min, 1e-9) * max), max);
+    else for (let i = 0; i < 4; i++) {
+      const t = i / 3;
+      stops.push(min > 0 ? min * Math.pow(max / min, t) : min + (max - min) * t);
+    }
+    const baseline = yStart + b.maxRadius * 2 + 4;
+    let x = 0;
+    for (const v of stops) {
+      const r = b.scale(v), cx = x + b.maxRadius;
+      circle(cx, baseline - r, r, 0.6);
+      legendText(parent, cx, baseline + fontSize + 4, fontSize, item.color, fmtNumber(v, 0, 'auto'), { 'text-anchor': 'middle' });
+      x += b.maxRadius * 2 + Math.max(8, fontSize * 0.6);
+    }
+    return;
+  }
+  // vertical — nested circles sharing a baseline
+  const cx = b.maxRadius, cyMax = yStart + b.maxRadius;
+  circle(cx, cyMax, b.maxRadius, 0.4);
+  circle(cx, cyMax + b.maxRadius - b.minRadius, b.minRadius, 0.7);
+  legendText(parent, cx + b.maxRadius + 6, cyMax - b.maxRadius + fontSize, fontSize, item.color, fmtNumber(b.maxValue, 0, 'auto'));
+  legendText(parent, cx + b.maxRadius + 6, cyMax + b.maxRadius - b.minRadius * 2 + fontSize, fontSize, item.color, fmtNumber(b.minValue, 0, 'auto'));
+}
+
+/**
+ * Group every requested legend by corner, stack the ones that share a corner
+ * inside a single rounded frame, then place that frame. Returns the footprint
+ * per corner so callers can dodge.
+ */
+function renderLegends(layer, inputs, scaleBarFootprints) {
+  clear(layer);
+  const footprints = {};
+  const groups = {};
+  const put = (key, obj) => {
+    if (!obj) return;
+    groups[obj.position] = groups[obj.position] || {};
+    groups[obj.position][key] = obj;
+  };
+  put('value', inputs.value); put('values', inputs.values); put('bubble', inputs.bubble);
+  put('glyph', inputs.glyph); put('levels', inputs.levels);
+
+  const c = inputs.container;
+  const header = { color: c.headerColor || '#222222', bold: c.headerBold !== false, fontSize: c.headerFontSize || 0 };
+  const item = { color: c.itemColor || '#1a1a1a', fontSize: c.itemFontSize || 0, swatchSize: c.itemSwatchSize || 0 };
+
+  for (const [position, contents] of Object.entries(groups)) {
+    const group = sel('g', { class: `cs-legend cs-legend-${position}` });
+    const inner = sel('g', { class: 'cs-legend-inner' });
+    group.appendChild(inner);
+    layer.appendChild(group);
+
+    // Stack order mirrors the map's z-order read from the top down: what sits
+    // above on the map reads first in the legend.
+    const stack = [];
+    const addSub = (fn) => { const sub = sel('g'); inner.appendChild(sub); fn(sub); stack.push(sub); };
+    if (contents.values) addSub((s) => drawValuesLegend(s, contents.values, header, item));
+    if (contents.glyph) addSub((s) => drawSwatchLegend(s, contents.glyph, header, item, 'Categories'));
+    if (contents.bubble) addSub((s) => drawBubbleLegend(s, contents.bubble, header, item));
+    if (contents.value) addSub((s) => drawValueLegend(s, contents.value, header, item));
+    if (contents.levels) addSub((s) => drawLevelsLegend(s, contents.levels, header, item));
+
+    const horizontal = c.orientation === 'horizontal';
+    let cursor = 0;
+    for (const sub of stack) {
+      const box = sub.getBBox();
+      if (horizontal) {
+        sub.setAttribute('transform', `translate(${cursor - box.x},0)`);
+        cursor += box.width + 8;
+      } else {
+        sub.setAttribute('transform', `translate(0,${cursor - box.y})`);
+        cursor += box.height + 8;
+      }
+    }
+
+    const bbox = inner.getBBox();
+    const pad = c.padding;
+    const frame = sel('rect', { x: bbox.x - pad, y: bbox.y - pad,
+      width: bbox.width + pad * 2, height: bbox.height + pad * 2,
+      rx: c.cornerRadius, ry: c.cornerRadius, fill: c.background,
+      'fill-opacity': c.backgroundOpacity, stroke: c.borderColor, 'stroke-width': c.borderWidth });
+    inner.insertBefore(frame, inner.firstChild);
+
+    const totalW = bbox.width + pad * 2, totalH = bbox.height + pad * 2, margin = 12;
+    // Scale bar owns its corner; the legend shifts inward to clear it.
+    const sbH = scaleBarFootprints?.[position]?.height || 0;
+    const sbOffset = sbH ? sbH + 8 : 0;
+    const xLeft = margin - bbox.x + pad;
+    const xRight = inputs.width - margin - totalW - bbox.x + pad;
+    const xCentre = (inputs.width - totalW) / 2 - bbox.x + pad;
+    const yTop = margin - bbox.y + pad + sbOffset;
+    const yBottom = inputs.height - margin - totalH - bbox.y + pad - sbOffset;
+    const yMiddle = (inputs.height - totalH) / 2 - bbox.y + pad;
+    const place = {
+      topLeft: [xLeft, yTop], topRight: [xRight, yTop], bottomLeft: [xLeft, yBottom],
+      bottomRight: [xRight, yBottom], topCenter: [xCentre, yTop], bottomCenter: [xCentre, yBottom],
+      leftCenter: [xLeft, yMiddle], rightCenter: [xRight, yMiddle]
+    }[position] || [xRight, yBottom];
+    group.setAttribute('transform', `translate(${place[0]},${place[1]})`);
+    footprints[position] = { width: totalW, height: totalH };
+  }
+  return footprints;
+}
+
+/* ======================================================== render pipeline == */
+
+const svgRoot = $('#map');
+const overlay = $('#overlay');
+const L = {};   // named SVG layers
+
+function setupSvg() {
+  clear(svgRoot);
+  L.bg = sel('rect', { x: 0, y: 0, width: '100%', height: '100%', fill: '#ffffff' });
+  svgRoot.appendChild(L.bg);
+  L.mapGroup = sel('g', { class: 'cs-map-group' });
+  svgRoot.appendChild(L.mapGroup);
+  for (const name of ['glow', 'adm2', 'adm1', 'bubble', 'glyph', 'adm2Label', 'adm1Label']) {
+    L[name] = sel('g', { class: `cs-layer-${name}` });
+    L.mapGroup.appendChild(L[name]);
+  }
+  L.static = sel('g', { class: 'cs-static' });
+  svgRoot.appendChild(L.static);
+  for (const name of ['scaleBar', 'legend', 'pill']) {
+    L[name] = sel('g', { class: `cs-layer-${name}` });
+    L.static.appendChild(L[name]);
+  }
+  // Everything above the polygons is decoration: clicks and hovers must fall
+  // through to the choropleth so drill and tooltips work under a label.
+  for (const name of ['glow', 'bubble', 'glyph', 'adm2Label', 'adm1Label', 'scaleBar', 'legend', 'pill']) {
+    L[name].setAttribute('pointer-events', 'none');
+  }
+}
+
+const hasGeometry = () => !!(state.geom.adm1 && state.geom.adm1.features.length);
+const hasAdm2 = () => !!(state.geom.adm2 && state.geom.adm2.features.length);
+
+function resolveView() {
+  const mode = S().general.viewMode;
+  if (!hasAdm2()) return 'admin1';
+  if (mode === 'admin1') return 'admin1';
+  if (mode === 'admin2') return 'admin2';
+  return (state.drill || state.data.roles.adm2Key) ? 'admin2' : 'admin1';
+}
+
+const alias1 = () => (S().general.admin1Alias || '').trim() || 'Admin 1';
+const alias2 = () => (S().general.admin2Alias || '').trim() || 'Admin 2';
+
+function admin1NameFor(pcode) {
+  const f = (state.geom.adm1?.features || []).find((x) => x.properties.ADM1_PCODE === pcode);
+  return f ? (f.properties.ADM1_EN || f.properties.ADM1_PCODE || pcode) : pcode;
+}
+function admin1NavOrder() {
+  return (state.geom.adm1?.features || [])
+    .map((f) => ({ p: f.properties.ADM1_PCODE, n: f.properties.ADM1_EN || f.properties.ADM1_PCODE || '' }))
+    .filter((x) => x.p)
+    .sort((a, b) => String(a.n).localeCompare(String(b.n), undefined, { numeric: true }))
+    .map((x) => x.p);
+}
+
+let renderScheduled = false;
+function scheduleRender() {
+  if (renderScheduled) return;
+  renderScheduled = true;
+  requestAnimationFrame(() => { renderScheduled = false; render(); });
+}
+
+function render() {
+  const wrap = $('#canvasWrap');
+  const width = state.viewportW = Math.max(80, wrap.clientWidth);
+  const height = state.viewportH = Math.max(80, wrap.clientHeight);
+  svgRoot.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+  const st = S();
+  const bgColor = st.general.transparentBackground ? 'none' : st.general.background;
+  L.bg.setAttribute('fill', bgColor === 'none' ? 'transparent' : bgColor);
+
+  $('#empty').style.display = hasGeometry() ? 'none' : '';
+  if (!hasGeometry()) {
+    for (const k of ['glow', 'adm2', 'adm1', 'bubble', 'glyph', 'adm2Label', 'adm1Label', 'scaleBar', 'legend', 'pill']) clear(L[k]);
+    clear(overlay);
+    state.last = null;
+    return;
+  }
+
+  const view = resolveView();
+  const { areas, stats } = getAreas();
+  state.joinStats = stats;
+  const adm1Level = Array.from(areas.values()).some((a) => a.level === 1) ? areas : aggregateToAdmin1(areas);
+
+  const adm1All = state.geom.adm1.features;
+  const adm2All = state.geom.adm2?.features || [];
+  let adm1Visible = adm1All;
+  let adm2Visible = view === 'admin2' ? adm2All : [];
+  if (state.drill) {
+    if (view === 'admin2') adm2Visible = adm2All.filter((f) => f.properties.ADM1_PCODE === state.drill);
+    if (st.general.hideUnfocused) adm1Visible = adm1All.filter((f) => f.properties.ADM1_PCODE === state.drill);
+  }
+
+  // Projection fits whatever the reader is focused on: drilled children first,
+  // then the visible Admin2 set, then Admin1.
+  let fitFeatures = adm1Visible;
+  if (state.drill) {
+    fitFeatures = view === 'admin2' && adm2Visible.length
+      ? adm2Visible
+      : adm1All.filter((f) => f.properties.ADM1_PCODE === state.drill);
+  } else if (view === 'admin2' && adm2Visible.length) {
+    fitFeatures = adm2Visible;
+  }
+  if (!fitFeatures.length) fitFeatures = adm1All;
+  const { projection, path } = buildProjection({ type: 'FeatureCollection', features: fitFeatures },
+    width, height, st.general.padding);
+
+  /* ---- classification -------------------------------------------------- */
+  const pcodeKey = view === 'admin2' ? 'ADM2_PCODE' : 'ADM1_PCODE';
+  const visibleFeatures = view === 'admin2' ? adm2Visible : adm1Visible;
+  const lookup = view === 'admin2' ? areas : adm1Level;
+  // PCODE-format-tolerant secondary index, so "sd_01" still finds "SD01".
+  const normLookup = new Map();
+  lookup.forEach((datum, key) => {
+    const n = normKey(key);
+    if (n && !normLookup.has(n)) normLookup.set(n, datum);
+  });
+  const datumFor = (f) => {
+    const raw = f.properties[pcodeKey];
+    return lookup.get(raw) || normLookup.get(normKey(raw)) || null;
+  };
+  const valued = visibleFeatures.map((f) => ({ feature: f, datum: datumFor(f) }));
+
+  const cs = st.choropleth;
+  const isBlank = (v) => v == null || (cs.zeroAsBlank && v === 0);
+  // "Classify on: all features" keeps one colour scale across drill levels so
+  // a shade means the same thing before and after you drill in.
+  const classifySet = cs.classifyScope === 'all'
+    ? (view === 'admin2' ? adm2All : adm1All).map((f) => ({ feature: f, datum: datumFor(f) }))
+    : valued;
+  const colorValues = classifySet.map((v) => v.datum?.colorValue).filter((v) => !isBlank(v));
+  const breaks = buildBreaks(colorValues, cs.classification, cs.classCount, cs.manualBreaks);
+  const customColors = [cs.color1, cs.color2, cs.color3, cs.color4, cs.color5, cs.color6, cs.color7];
+  const colors = cs.mode === 'custom'
+    ? customColors.slice(0, Math.max(1, breaks.classCount))
+    : rampColors(cs.baseColor, Math.max(1, breaks.classCount));
+  const blankFill = cs.blankTransparent ? 'transparent' : cs.blankColor;
+
+  // Categorical: unique raw values in natural order (so "Severity 10" follows
+  // "Severity 9"), cycling through the custom class colours.
+  let categoryColors = null, categoricalClasses = null;
+  if (cs.classification === 'categorical') {
+    const seen = new Set(), cats = [];
+    for (const v of classifySet) {
+      const raw = v.datum?.colorValueRaw;
+      if (raw == null || raw === '') continue;
+      const k = String(raw);
+      if (!seen.has(k)) { seen.add(k); cats.push(k); }
+    }
+    cats.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    categoryColors = new Map();
+    categoricalClasses = cats.map((cat, i) => {
+      const color = customColors[i % customColors.length];
+      categoryColors.set(cat, color);
+      return { color, label: cat };
+    });
+  }
+
+  const fillFor = (datum) => {
+    if (!cs.show) return 'none';
+    if (cs.classification === 'categorical') {
+      const raw = datum?.colorValueRaw;
+      const key = raw == null ? null : String(raw);
+      return key && categoryColors?.has(key) ? categoryColors.get(key) : blankFill;
+    }
+    const v = datum?.colorValue;
+    return !isBlank(v) ? colors[Math.min(colors.length - 1, classIndex(breaks.breaks, v))] : blankFill;
+  };
+
+  /* ---- rows ------------------------------------------------------------ */
+  const dimmed = (pcode) => !!state.drill && pcode !== state.drill;
+  const rows = valued.map(({ feature, datum }) => ({
+    feature, datum, pcode: feature.properties[pcodeKey],
+    fill: fillFor(datum), fillOpacity: cs.show ? cs.fillOpacity : 0
+  }));
+
+  let adm1Rows, adm2Rows;
+  if (view === 'admin1') {
+    adm1Rows = rows.map((r) => ({ ...r,
+      fillOpacity: r.fillOpacity * (dimmed(r.pcode) ? 0.55 : 1) }));
+    adm2Rows = [];
+  } else {
+    // Admin2 carries the choropleth; Admin1 exists for borders and, when
+    // drilled, to mute the surrounding context.
+    adm1Rows = adm1Visible.map((f) => {
+      const p = f.properties.ADM1_PCODE;
+      const dim = dimmed(p);
+      return { feature: f, datum: adm1Level.get(p) || null, pcode: p,
+        fill: dim ? blankFill : 'none', fillOpacity: dim ? 0.55 : 0 };
+    });
+    adm2Rows = rows;
+  }
+
+  /* ---- draw ------------------------------------------------------------ */
+  renderGlow(L.glow, path, adm1Visible, st.borders);
+  const adm2Nodes = renderChoropleth(L.adm2, path, adm2Rows, 'cs-adm2');
+  const adm1Nodes = renderChoropleth(L.adm1, path, adm1Rows, 'cs-adm1');
+  for (const n of adm1Nodes) {
+    n.__dim = dimmed(n.__row.pcode);
+    // In Admin 2 view the Admin 1 layer is drawn on top for its borders, so it
+    // must let clicks through to the children below. Dimmed neighbours have no
+    // children under them and stay clickable, which is how you hop states.
+    n.style.pointerEvents = view === 'admin2' && !n.__dim ? 'none' : '';
+  }
+  applyBorders(L.adm1, L.adm2, st.borders);
+
+  const glyphResult = renderGlyphs(L.glyph, projection, visibleFeatures, lookup, pcodeKey,
+    { ...st.glyphChart, colors: [st.glyphChart.color1, st.glyphChart.color2, st.glyphChart.color3,
+      st.glyphChart.color4, st.glyphChart.color5, st.glyphChart.color6, st.glyphChart.color7,
+      st.glyphChart.color8] }, state.zoom);
+  const bubbleResult = renderBubbles(L.bubble, projection, visibleFeatures, lookup, pcodeKey,
+    st.bubbles, state.zoom);
+
+  /* ---- labels ---------------------------------------------------------- */
+  const localityCard = state.drill ? st.drillLabels : st.localityLabels;
+  const overlayAnchors = glyphResult?.anchors?.size
+    ? { anchors: glyphResult.anchors, placement: st.glyphChart.labelPlacement, kind: 'glyph' }
+    : (bubbleResult ? { anchors: bubbleResult.anchors, placement: st.bubbles.labelPlacement, kind: 'bubble' } : null);
+
+  const adm1Holes = buildVirtualHoles(adm1Visible, 'ADM1_PCODE');
+  const adm2Holes = buildVirtualHoles(adm2Visible, 'ADM2_PCODE');
+  const labelDatum = (f, key, nameKey, table) => {
+    const datum = table.get(f.properties[key]) || normLookup.get(normKey(f.properties[key])) || null;
+    return { feature: f, pcode: f.properties[key],
+      name: f.properties[nameKey] || f.properties[key] || '',
+      nameOverride: datum?.labelText1 ?? null, value: datum?.colorValue ?? null,
+      value2: datum?.labelValue2 ?? null, bubbleValue: datum?.bubbleSize ?? null };
+  };
+
+  clear(L.adm1Label); clear(L.pill);
+  if (st.stateLabels.show) {
+    const isDrill = !!state.drill;
+    const group = sel('g', { class: 'cs-adm1-labels' });
+    if (isDrill) group.setAttribute('opacity', '0.55');
+    L.adm1Label.appendChild(group);
+    const features = isDrill ? adm1Visible.filter((f) => f.properties.ADM1_PCODE !== state.drill) : adm1Visible;
+    const labels = features.map((f) => labelDatum(f, 'ADM1_PCODE', 'ADM1_EN', adm1Level));
+    // In drill view the neighbours read as context: names only, and dropped
+    // outright if they cannot fit inside their own polygon.
+    const style = isDrill
+      ? { ...st.stateLabels, content: 'name', allowOverrun: false, hideOnOverflow: true }
+      : st.stateLabels;
+    let forbidden = null;
+    if (isDrill) {
+      const focused = adm1All.find((f) => f.properties.ADM1_PCODE === state.drill);
+      const ring = focused && largestProjectedOuterRing(focused.geometry, projection);
+      if (ring && ring.length >= 3) forbidden = ring;
+    }
+    renderLabels(group, projection, path, labels, style, {
+      overrides: view === 'admin1' && overlayAnchors
+        ? buildOverlayLabelOverrides(overlayAnchors.anchors, overlayAnchors.placement, st.stateLabels.fontSize, overlayAnchors.kind)
+        : null,
+      zoom: state.zoom, forbiddenPolygon: forbidden, virtualHoles: adm1Holes, idPrefix: 'a1' });
+
+    if (isDrill) {
+      const focused = adm1All.find((f) => f.properties.ADM1_PCODE === state.drill);
+      if (focused) renderDrillPill(width, focused, adm1Level.get(state.drill));
+    }
+  }
+
+  if (view === 'admin2' && localityCard.show && adm2Visible.length) {
+    const labels = adm2Visible.map((f) => labelDatum(f, 'ADM2_PCODE', 'ADM2_EN', areas));
+    renderLabels(L.adm2Label, projection, path, labels, localityCard, {
+      overrides: overlayAnchors
+        ? buildOverlayLabelOverrides(overlayAnchors.anchors, overlayAnchors.placement, localityCard.fontSize, overlayAnchors.kind)
+        : null,
+      zoom: state.zoom, virtualHoles: adm2Holes, idPrefix: 'a2' });
+  } else {
+    clear(L.adm2Label);
+  }
+
+  /* ---- scale bar + legends --------------------------------------------- */
+  const sbFootprint = renderScaleBar(L.scaleBar, projection, width, height, state.zoom, st.scaleBar);
+  const sbByCorner = sbFootprint ? { [sbFootprint.position]: { height: sbFootprint.height } } : undefined;
+
+  let valueClasses = cs.classification === 'categorical'
+    ? (categoricalClasses || []).map((c) => ({ color: c.color, from: 0, to: 0, label: c.label }))
+    : (breaks.classCount > 0 ? makeLegendClasses(breaks, colors) : []);
+  // Only claim "No data" in the legend when a polygon is actually painted with
+  // the no-data colour — and never in transparent mode, where the user has
+  // chosen for blanks to be invisible.
+  if (!cs.blankTransparent && valueClasses.length && rows.some((r) => r.fill === cs.blankColor)) {
+    valueClasses = valueClasses.concat([{ color: cs.blankColor, from: 0, to: 0, label: 'No data' }]);
+  }
+  const roles = state.data.roles;
+  const glyphColors = [st.glyphChart.color1, st.glyphChart.color2, st.glyphChart.color3, st.glyphChart.color4,
+    st.glyphChart.color5, st.glyphChart.color6, st.glyphChart.color7, st.glyphChart.color8];
+
+  const legendInputs = {
+    width, height,
+    value: (cs.show && st.valueLegend.show && valueClasses.length) ? {
+      title: st.valueLegend.title || roles.colorValue || '',
+      classes: valueClasses, decimals: st.valueLegend.decimals,
+      orientation: st.valueLegend.orientation, position: st.valueLegend.position, size: st.valueLegend.size
+    } : null,
+    bubble: (st.bubbleLegend.show && bubbleResult) ? {
+      title: st.bubbleLegend.title || roles.bubbleSize || '',
+      fillColor: st.bubbles.fillColor, strokeColor: st.bubbles.strokeColor,
+      minRadius: st.bubbles.minRadius, maxRadius: st.bubbles.maxRadius,
+      minValue: bubbleResult.minValue, maxValue: bubbleResult.maxValue, scale: bubbleResult.scale,
+      position: st.bubbleLegend.position, size: st.bubbleLegend.size, orientation: st.bubbleLegend.orientation
+    } : null,
+    glyph: (st.glyphLegend.show && st.glyphChart.show && roles.glyphValues.length) ? {
+      title: st.glyphLegend.title, items: roles.glyphValues.map((c, i) => ({ label: c, color: glyphColors[i % 8] })),
+      orientation: st.glyphLegend.orientation, position: st.glyphLegend.position, size: st.glyphLegend.size
+    } : null,
+    values: buildValuesLegendInput(view),
+    levels: buildLevelsLegendInput(),
+    container: { ...st.legendContainer, orientation: st.legendContainer.containerOrientation }
+  };
+  renderLegends(L.legend, legendInputs, sbByCorner);
+
+  /* ---- chrome + interaction -------------------------------------------- */
+  applyZoom();
+  renderChrome(view);
+  wireInteraction(adm1Nodes, adm2Nodes, view, adm1Level, areas);
+
+  state.last = { projection, view, areas, adm1Level, legendInputs };
+  refreshJoinStatus();
+}
+
+/** Values legend payload — one `#` row per active label-value source. */
+function buildValuesLegendInput(view) {
+  const st = S(), card = st.valuesLegend;
+  if (!card.show) return null;
+  const labelCard = view === 'admin2' ? (state.drill ? st.drillLabels : st.localityLabels) : st.stateLabels;
+  if (labelCard.content === 'name') return null;   // no value text is drawn anywhere
+  const want = valueSourceFlags(labelCard.valueSource);
+  const roles = state.data.roles;
+  const items = [];
+  if (want.choropleth && roles.colorValue) items.push({ label: roles.colorValue, color: labelCard.valueColor });
+  if (want.bubble && roles.bubbleSize) items.push({ label: roles.bubbleSize, color: labelCard.bubbleValueColor });
+  if (want.custom && roles.labelValue2) items.push({ label: roles.labelValue2, color: labelCard.customValueColor });
+  if (!items.length) return null;
+  return { title: card.title, items, position: card.position, size: card.size, orientation: card.orientation };
+}
+
+function buildLevelsLegendInput() {
+  const st = S(), card = st.adminLevelsLegend;
+  if (!card.show) return null;
+  const items = [];
+  if (card.showAdmin1) items.push({ label: alias1(), color: st.borders.stateColor, width: st.borders.stateWidth });
+  if (card.showAdmin2 && hasAdm2()) items.push({ label: alias2(), color: st.borders.localityColor, width: st.borders.localityWidth });
+  if (!items.length) return null;
+  return { title: card.title, items, position: card.position, size: card.size, orientation: card.orientation };
+}
+
+/** Drill title pill — drawn in SVG (not HTML chrome) so it survives export. */
+function renderDrillPill(width, feature, datum) {
+  const st = S();
+  if (st.general.hideChrome) return;
+  const name = feature.properties.ADM1_EN || feature.properties.ADM1_PCODE;
+  const lines = [{ text: name, size: 15, weight: 700, color: '#1d2129' }];
+  const roles = state.data.roles;
+  if (datum?.colorValue != null && roles.colorValue) {
+    lines.push({ text: `${roles.colorValue}: ${fmtNumber(datum.colorValue, 0, 'auto')}`, size: 11.5, weight: 400, color: '#5a6472' });
+  }
+  if (datum?.bubbleSize != null && roles.bubbleSize) {
+    lines.push({ text: `${roles.bubbleSize}: ${fmtNumber(datum.bubbleSize, 0, 'auto')}`, size: 11.5, weight: 400, color: '#5a6472' });
+  }
+  const padX = 14, padY = 8;
+  const w = Math.max(...lines.map((l) => approxTextWidth(l.text, l.size))) + padX * 2;
+  const h = lines.reduce((a, l) => a + l.size * 1.35, 0) + padY * 2;
+  const x = (width - w) / 2, y = 12;
+  const g = sel('g', { class: 'cs-pill', transform: `translate(${x},${y})` });
+  g.appendChild(sel('rect', { x: 0, y: 0, width: w, height: h, rx: 8, ry: 8,
+    fill: '#ffffff', 'fill-opacity': 0.92, stroke: '#dde1e8', 'stroke-width': 1 }));
+  let cy = padY;
+  for (const l of lines) {
+    cy += l.size;
+    const t = sel('text', { x: w / 2, y: cy, 'text-anchor': 'middle', 'font-size': l.size,
+      'font-weight': l.weight, fill: l.color, 'font-family': 'inherit' });
+    t.textContent = l.text;
+    g.appendChild(t);
+    cy += l.size * 0.35;
+  }
+  L.pill.appendChild(g);
+}
+
+/* --------------------------------------------------------------- zoom ----- */
+
+function applyZoom() {
+  const z = state.zoom, cx = state.viewportW / 2, cy = state.viewportH / 2;
+  L.mapGroup.setAttribute('transform',
+    `translate(${cx + state.panX},${cy + state.panY}) scale(${z}) translate(${-cx},${-cy})`);
+  updateLabelTransforms(L.adm1Label, z);
+  updateLabelTransforms(L.adm2Label, z);
+  updateCounterZoom(L.bubble, z);
+  updateCounterZoom(L.glyph, z);
+  svgRoot.style.cursor = z > 1.001 ? (dragState ? 'grabbing' : 'grab') : '';
+}
+
+function setZoom(z, focal) {
+  const next = clamp(z, 0.4, 40);
+  if (focal) {
+    // Keep the point under the cursor pinned while the scale changes.
+    const cx = state.viewportW / 2, cy = state.viewportH / 2;
+    state.panX = focal[0] - cx - (next / state.zoom) * (focal[0] - cx - state.panX);
+    state.panY = focal[1] - cy - (next / state.zoom) * (focal[1] - cy - state.panY);
+  }
+  state.zoom = next;
+  applyZoom();
+  // The scale bar's labelled distance depends on zoom; legends do not move.
+  if (state.last) {
+    renderScaleBar(L.scaleBar, state.last.projection, state.viewportW, state.viewportH, state.zoom, S().scaleBar);
+  }
+  renderControls();
+}
+function resetView() { state.zoom = 1; state.panX = 0; state.panY = 0; setZoom(1); }
+
+/* ------------------------------------------------------- on-canvas chrome - */
+
+function renderChrome(view) {
+  clear(overlay);
+  if (S().general.hideChrome) return;
+  renderNavBar(view);
+  renderControls();
+}
+
+function iconBtn(svgHtml, label, onClick, disabled) {
+  const b = el('button', { type: 'button', title: label, 'aria-label': label, html: svgHtml });
+  if (disabled) b.disabled = true;
+  else b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+  return b;
+}
+
+const ICON_HOME = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5 8 3l6 5.5"/><path d="M3.5 7.5V13h9V7.5"/></svg>';
+
+function renderNavBar(view) {
+  if (!state.drill) return;
+  const w = state.viewportW;
+  const mode = w >= 560 ? 'large' : (w < 340 ? 'small' : 'medium');
+  const bar = el('div', { class: `cs-topbar-map ${mode}` });
+
+  bar.appendChild(iconBtn(
+    mode === 'large' ? `${ICON_HOME}<span>Full view</span>` : ICON_HOME,
+    'Back to full view', () => { state.drill = null; resetView(); render(); }));
+
+  const order = admin1NavOrder();
+  const idx = order.indexOf(state.drill);
+  const canCycle = order.length > 1 && idx >= 0;
+  const prev = canCycle ? order[(idx - 1 + order.length) % order.length] : null;
+  const next = canCycle ? order[(idx + 1) % order.length] : null;
+  bar.appendChild(iconBtn('&#8249;', prev ? `Previous ${alias1()} (${admin1NameFor(prev)})` : 'Previous',
+    () => { state.drill = prev; render(); }, !prev));
+  bar.appendChild(iconBtn('&#8250;', next ? `Next ${alias1()} (${admin1NameFor(next)})` : 'Next',
+    () => { state.drill = next; render(); }, !next));
+
+  // The large layout puts the name in the SVG pill; narrower viewports show it
+  // inline here instead so the bar still says where you are.
+  if (mode !== 'large') bar.appendChild(el('span', { class: 'title', text: admin1NameFor(state.drill) }));
+  overlay.appendChild(bar);
+}
+
+function renderControls() {
+  overlay.querySelector('.cs-controls')?.remove();
+  const c = S().controls;
+  const panel = el('div', { class: 'cs-controls' });
+  panel.dataset.pos = c.position;
+  if (c.showPan) {
+    const mk = (dir, glyph, label) => iconBtn(glyph, label, () => {
+      const step = 60;
+      if (dir === 'up') state.panY += step; if (dir === 'down') state.panY -= step;
+      if (dir === 'left') state.panX += step; if (dir === 'right') state.panX -= step;
+      applyZoom(); renderControls();
+    });
+    const rowT = el('div', { class: 'cs-pan-row' }, mk('up', '&#9650;', 'Pan up'));
+    const rowM = el('div', { class: 'cs-pan-row' }, mk('left', '&#9664;', 'Pan left'), mk('right', '&#9654;', 'Pan right'));
+    const rowB = el('div', { class: 'cs-pan-row' }, mk('down', '&#9660;', 'Pan down'));
+    panel.append(rowT, rowM, rowB);
+  }
+  if (c.showZoom) {
+    panel.appendChild(iconBtn('+', 'Zoom in', () => setZoom(state.zoom * 1.25)));
+    panel.appendChild(iconBtn('&#8722;', 'Zoom out', () => setZoom(state.zoom / 1.25)));
+  }
+  if (state.zoom > 1.001 || state.panX || state.panY) {
+    panel.appendChild(iconBtn('&#8634;', 'Reset zoom and pan', () => resetView()));
+  }
+  if (panel.children.length) overlay.appendChild(panel);
+}
+
+/* -------------------------------------------------------- interaction ----- */
+
+let dragState = null;
+
+function wireInteraction(adm1Nodes, adm2Nodes, view, adm1Level, areas) {
+  const c = S().controls;
+  const tip = $('#tip');
+  const showTip = (evt, row, table, isAdmin2) => {
+    if (!c.showTooltip) return;
+    const datum = row.datum || table.get(row.pcode);
+    const f = row.feature.properties;
+    const name = isAdmin2 ? (f.ADM2_EN || f.ADM2_PCODE) : (f.ADM1_EN || f.ADM1_PCODE);
+    const roles = state.data.roles;
+    const lines = [];
+    const seen = new Set();
+    // One row per label — binding the same column to two roles shouldn't
+    // produce the same line twice.
+    const push = (label, value) => {
+      if (value == null || value === '' || seen.has(label)) return;
+      seen.add(label);
+      lines.push([label, value]);
+    };
+    push(isAdmin2 ? alias2() : alias1(), name);
+    if (row.pcode) push('Code', row.pcode);
+    if (roles.colorValue && datum?.colorValue != null) push(roles.colorValue, fmtNumber(datum.colorValue, 2, 'auto'));
+    if (roles.bubbleSize && datum?.bubbleSize != null) push(roles.bubbleSize, fmtNumber(datum.bubbleSize, 2, 'auto'));
+    if (roles.labelValue2 && datum?.labelValue2 != null) push(roles.labelValue2, fmtNumber(datum.labelValue2, 2, 'auto'));
+    roles.glyphValues.forEach((col, i) => {
+      if (datum?.glyphValues?.[i] != null) push(col, fmtNumber(datum.glyphValues[i], 2, 'auto'));
+    });
+    for (const t of (datum?.tooltips || [])) push(t.label, t.value);
+    tip.innerHTML = `<b>${esc(lines[0][1])}</b>` +
+      lines.slice(1).map(([k, v]) => `<div class="r"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join('');
+    tip.classList.add('show');
+    moveTip(evt);
+  };
+  const moveTip = (evt) => {
+    const wrap = $('#canvasWrap').getBoundingClientRect();
+    let x = evt.clientX - wrap.left + 14, y = evt.clientY - wrap.top + 14;
+    if (x + tip.offsetWidth > wrap.width - 8) x = evt.clientX - wrap.left - tip.offsetWidth - 12;
+    if (y + tip.offsetHeight > wrap.height - 8) y = evt.clientY - wrap.top - tip.offsetHeight - 12;
+    tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+  };
+  const hideTip = () => tip.classList.remove('show');
+
+  const bind = (nodes, table, isAdmin2) => {
+    for (const n of nodes) {
+      n.addEventListener('mouseenter', (e) => showTip(e, n.__row, table, isAdmin2));
+      n.addEventListener('mousemove', moveTip);
+      n.addEventListener('mouseleave', hideTip);
+    }
+  };
+  bind(adm1Nodes, adm1Level, false);
+  bind(adm2Nodes, areas, true);
+
+  const drillTo = (pcode) => {
+    if (!pcode) return;
+    state.drill = state.drill === pcode ? null : pcode;
+    hideTip();
+    resetView();
+    render();
+  };
+  if (c.drillOnClick) {
+    for (const n of adm1Nodes) {
+      n.style.cursor = 'pointer';
+      n.addEventListener('click', (e) => {
+        if (dragState?.moved) return;
+        e.stopPropagation();
+        drillTo(n.__row.pcode);
+      });
+    }
+    // Admin 2 polygons drill into their parent, so the Admin 2 view is not a
+    // dead end when the user lands there straight from the bindings.
+    if (!state.drill) {
+      for (const n of adm2Nodes) {
+        n.style.cursor = 'pointer';
+        n.addEventListener('click', (e) => {
+          if (dragState?.moved) return;
+          e.stopPropagation();
+          drillTo(n.__row.feature.properties.ADM1_PCODE);
+        });
+      }
+    }
+  }
+}
+
+function wireCanvasGestures() {
+  const wrap = $('#canvasWrap');
+  wrap.addEventListener('wheel', (e) => {
+    if (!S().controls.wheelZoom || !hasGeometry()) return;
+    e.preventDefault();
+    const r = wrap.getBoundingClientRect();
+    setZoom(state.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12), [e.clientX - r.left, e.clientY - r.top]);
+  }, { passive: false });
+
+  // Drag-pan listens on the window rather than capturing the pointer: pointer
+  // capture would retarget the follow-up `click` to the canvas and swallow the
+  // drill-on-click on the polygon underneath.
+  const onMove = (e) => {
+    if (!dragState) return;
+    const dx = e.clientX - dragState.x, dy = e.clientY - dragState.y;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragState.moved = true;
+    state.panX = dragState.panX + dx;
+    state.panY = dragState.panY + dy;
+    applyZoom();
+  };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    if (!dragState) return;
+    // Keep `moved` readable by the click handler that fires right after.
+    setTimeout(() => { dragState = null; applyZoom(); renderControls(); }, 0);
+    if (dragState.moved) renderControls();
+  };
+  wrap.addEventListener('pointerdown', (e) => {
+    if (!S().controls.dragPan || e.button !== 0 || !hasGeometry()) return;
+    dragState = { x: e.clientX, y: e.clientY, panX: state.panX, panY: state.panY, moved: false };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    svgRoot.style.cursor = 'grabbing';
+  });
+
+  // Drag-and-drop onto the canvas: the first geometry file wins, tabular files
+  // go to the data slot.
+  wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('dragover'); });
+  wrap.addEventListener('dragleave', () => wrap.classList.remove('dragover'));
+  wrap.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    wrap.classList.remove('dragover');
+    for (const file of Array.from(e.dataTransfer.files || [])) {
+      if (/\.(geojson|topojson|json)$/i.test(file.name)) {
+        await loadGeometryFile(file, hasGeometry() ? 2 : 1);
+      } else if (/\.(csv|tsv|txt|xlsx|xls)$/i.test(file.name)) {
+        await loadDataFile(file);
+      }
+    }
+  });
+}
+
+/* ============================================================== data UI ==== */
+
+const NONE = '(none)';
+
+function selectEl(options, current, onChange, { allowNone = true, noneLabel = NONE } = {}) {
+  const s = el('select');
+  if (allowNone) s.appendChild(el('option', { value: '', text: noneLabel }));
+  for (const opt of options) {
+    const [value, label] = Array.isArray(opt) ? opt : [opt, opt];
+    s.appendChild(el('option', { value, text: label, selected: String(value) === String(current) }));
+  }
+  s.value = current == null ? '' : String(current);
+  s.addEventListener('change', () => onChange(s.value));
+  return s;
+}
+
+function fileButton(label, accept, onFile) {
+  const input = el('input', { type: 'file', accept });
+  input.addEventListener('change', async () => {
+    const f = input.files?.[0];
+    input.value = '';
+    if (f) await onFile(f);
+  });
+  return el('label', { class: 'filebtn' }, label, input);
+}
+
+function readFileText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error(`Could not read ${file.name}`));
+    r.readAsText(file);
+  });
+}
+
+async function loadGeometryFile(file, level) {
+  try {
+    if (file.size > 90 * 1024 * 1024) throw new Error(`${file.name} is larger than 90 MB — simplify it first (mapshaper.org)`);
+    const text = await readFileText(file);
+    const fc = parseGeometryText(text, file.name);
+    const flipped = rewindFeatureCollection(fc);   // always, on every upload
+    invalidateAreas();
+    const props = collectPropertyNames(fc);
+    const g = state.geom;
+    if (level === 1) {
+      g.adm1 = fc; g.adm1Name = file.name; g.adm1Props = props;
+      g.mapping.adm1Pcode = guessField(props, 'adm1Pcode') || guessField(props, 'adm1Name');
+      g.mapping.adm1Name = guessField(props, 'adm1Name');
+      if (!g.mapping.adm1Pcode && props.length) g.mapping.adm1Pcode = props[0];
+      applyMapping(fc, 1, g.mapping);
+      if (!S().general.admin1LinkField) setSetting('general', 'admin1LinkField', 'ADM1_PCODE', false);
+    } else {
+      g.adm2 = fc; g.adm2Name = file.name; g.adm2Props = props;
+      g.mapping.adm2Pcode = guessField(props, 'adm2Pcode') || guessField(props, 'adm2Name');
+      g.mapping.adm2Name = guessField(props, 'adm2Name');
+      g.mapping.adm2Parent = guessField(props, 'adm1Pcode');
+      applyMapping(fc, 2, g.mapping);
+    }
+    toast(`${file.name}: ${fc.features.length} features loaded` +
+      (flipped ? `, ${flipped} ring${flipped === 1 ? '' : 's'} rewound to d3-geo winding` : ''));
+    state.drill = null;
+    resetView();
+    buildDataPanel();
+    buildFormatPanel();
+    render();
+    saveLocal(true);
+  } catch (e) {
+    toast(e.message || String(e), true);
+  }
+}
+
+async function loadDataFile(file) {
+  try {
+    let parsed;
+    if (/\.(xlsx|xls|xlsm)$/i.test(file.name)) parsed = await parseWorkbookFile(file);
+    else parsed = parseDelimitedText(await readFileText(file), file.name);
+    adoptData(parsed, file.name);
+  } catch (e) {
+    toast(e.message || String(e), true);
+  }
+}
+
+function adoptData(parsed, fileName) {
+  invalidateAreas();
+  state.data.rows = parsed.rows;
+  state.data.columns = parsed.columns;
+  state.data.fileName = fileName;
+  const inferred = inferRoles(parsed.columns, parsed.rows);
+  // Keep the user's existing bindings when the new file still has those
+  // columns — re-uploading a corrected export shouldn't reset the design.
+  const keep = (v) => (Array.isArray(v) ? v.filter((c) => parsed.columns.includes(c))
+    : (parsed.columns.includes(v) ? v : ''));
+  const r = state.data.roles;
+  state.data.roles = {
+    adm1Key: keep(r.adm1Key) || inferred.adm1Key,
+    adm2Key: keep(r.adm2Key) || inferred.adm2Key,
+    colorValue: keep(r.colorValue) || inferred.colorValue,
+    bubbleSize: keep(r.bubbleSize), glyphValues: keep(r.glyphValues),
+    labelValue2: keep(r.labelValue2), labelText1: keep(r.labelText1), tooltips: keep(r.tooltips)
+  };
+  toast(`${fileName}: ${parsed.rows.length} rows × ${parsed.columns.length} columns`);
+  buildDataPanel();
+  render();
+  saveLocal(true);
+}
+
+function group(title, badge) {
+  const g = el('div', { class: 'grp' });
+  const h = el('h4', {}, title);
+  if (badge) h.appendChild(el('span', { class: `badge ${badge.ok ? 'ok' : ''}`, text: badge.text }));
+  g.appendChild(h);
+  return g;
+}
+
+function mapRow(label, options, current, onChange) {
+  return el('div', { class: 'row' }, el('label', { text: label }),
+    el('div', { class: 'ctl' }, selectEl(options, current, onChange)));
+}
+
+function buildDataPanel() {
+  const panel = clear($('#panelData'));
+  const g = state.geom;
+
+  /* ---- Admin 1 geometry ------------------------------------------------ */
+  const g1 = group(`Geometry — ${alias1()}`, g.adm1 ? { text: `${g.adm1.features.length} features`, ok: true } : { text: 'required' });
+  if (!g.adm1) {
+    g1.appendChild(fileButton('Upload Admin 1 GeoJSON / TopoJSON', '.geojson,.json,.topojson',
+      (f) => loadGeometryFile(f, 1)));
+  } else {
+    g1.appendChild(el('div', { class: 'filename' }, el('span', { text: g.adm1Name }),
+      el('button', { class: 'x', title: 'Remove', text: '✕', onclick: () => {
+        g.adm1 = null; g.adm2 = null; g.adm1Props = []; g.adm2Props = [];
+        state.drill = null; buildDataPanel(); render(); saveLocal(true);
+      } })));
+    g1.appendChild(mapRow(`${alias1()} join key`, g.adm1Props, g.mapping.adm1Pcode,
+      (v) => { g.mapping.adm1Pcode = v; applyMapping(g.adm1, 1, g.mapping); render(); saveLocal(true); }));
+    g1.appendChild(mapRow(`${alias1()} name`, g.adm1Props, g.mapping.adm1Name,
+      (v) => { g.mapping.adm1Name = v; applyMapping(g.adm1, 1, g.mapping); render(); saveLocal(true); }));
+    const missing = g.adm1.features.filter((f) => !f.properties.ADM1_PCODE).length;
+    if (missing) g1.appendChild(el('div', { class: 'hint warn',
+      text: `${missing} feature${missing === 1 ? '' : 's'} have no value for the join key.` }));
+  }
+  panel.appendChild(g1);
+
+  /* ---- Admin 2 geometry ------------------------------------------------ */
+  if (g.adm1) {
+    const g2 = group(`Geometry — ${alias2()}`, g.adm2 ? { text: `${g.adm2.features.length} features`, ok: true } : { text: 'optional' });
+    if (!g.adm2) {
+      g2.appendChild(fileButton('Upload Admin 2 GeoJSON / TopoJSON', '.geojson,.json,.topojson',
+        (f) => loadGeometryFile(f, 2)));
+    } else {
+      g2.appendChild(el('div', { class: 'filename' }, el('span', { text: g.adm2Name }),
+        el('button', { class: 'x', title: 'Remove', text: '✕', onclick: () => {
+          g.adm2 = null; g.adm2Props = []; state.drill = null; buildDataPanel(); buildFormatPanel(); render(); saveLocal(true);
+        } })));
+      const remap = () => { applyMapping(g.adm2, 2, g.mapping); render(); saveLocal(true); };
+      g2.appendChild(mapRow(`${alias2()} join key`, g.adm2Props, g.mapping.adm2Pcode,
+        (v) => { g.mapping.adm2Pcode = v; remap(); }));
+      g2.appendChild(mapRow(`${alias2()} name`, g.adm2Props, g.mapping.adm2Name,
+        (v) => { g.mapping.adm2Name = v; remap(); }));
+      g2.appendChild(mapRow(`Parent ${alias1()} key`, g.adm2Props, g.mapping.adm2Parent,
+        (v) => { g.mapping.adm2Parent = v; remap(); }));
+      const orphans = g.adm2.features.filter((f) => !f.properties.ADM1_PCODE).length;
+      if (orphans) g2.appendChild(el('div', { class: 'hint warn',
+        text: `${orphans} Admin 2 features have no parent Admin 1 code — drill-down will skip them.` }));
+    }
+    panel.appendChild(g2);
+  }
+
+  /* ---- tabular data ---------------------------------------------------- */
+  const gd = group('Data table', state.data.rows.length
+    ? { text: `${state.data.rows.length} rows`, ok: true } : { text: 'optional' });
+  if (!state.data.rows.length) {
+    gd.appendChild(fileButton('Upload CSV / TSV / XLSX', '.csv,.tsv,.txt,.xlsx,.xls', loadDataFile));
+    gd.appendChild(el('button', { class: 'tb-btn', style: 'width:100%;margin-top:6px;justify-content:center',
+      text: 'Paste CSV / TSV text…', onclick: openPasteModal }));
+  } else {
+    gd.appendChild(el('div', { class: 'filename' }, el('span', { text: state.data.fileName }),
+      el('button', { class: 'x', title: 'Remove', text: '✕', onclick: () => {
+        state.data.rows = []; state.data.columns = []; state.data.fileName = '';
+        state.data.roles = { adm1Key: '', adm2Key: '', colorValue: '', bubbleSize: '',
+          glyphValues: [], labelValue2: '', labelText1: '', tooltips: [] };
+        buildDataPanel(); render(); saveLocal(true);
+      } })));
+    const cols = state.data.columns;
+    const table = el('table', { class: 'mini' });
+    const head = el('tr');
+    for (const c of cols.slice(0, 4)) head.appendChild(el('th', { text: c, title: c }));
+    if (cols.length > 4) head.appendChild(el('th', { text: `+${cols.length - 4}` }));
+    table.appendChild(head);
+    for (const row of state.data.rows.slice(0, 3)) {
+      const tr = el('tr');
+      for (const c of cols.slice(0, 4)) tr.appendChild(el('td', { text: String(row[c] ?? ''), title: String(row[c] ?? '') }));
+      if (cols.length > 4) tr.appendChild(el('td', { text: '…' }));
+      table.appendChild(tr);
+    }
+    gd.appendChild(table);
+  }
+  panel.appendChild(gd);
+
+  /* ---- role binding ---------------------------------------------------- */
+  if (state.data.columns.length) {
+    const gr = group('Field bindings');
+    const cols = state.data.columns;
+    const setRole = (role, v) => { state.data.roles[role] = v; buildDataPanel(); render(); saveLocal(); };
+    const grid = el('div', { class: 'rolegrid' });
+    const addRole = (label, role, hint) => {
+      grid.appendChild(el('span', { html: `${esc(label)}${hint ? ` <code>${esc(hint)}</code>` : ''}` }));
+      grid.appendChild(selectEl(cols, state.data.roles[role], (v) => setRole(role, v)));
+    };
+    addRole(`${alias1()} join column`, 'adm1Key');
+    if (hasAdm2()) addRole(`${alias2()} join column`, 'adm2Key');
+    addRole('Choropleth value', 'colorValue');
+    addRole('Bubble size', 'bubbleSize');
+    addRole('Label value 2', 'labelValue2');
+    addRole('Label text 1 (name override)', 'labelText1');
+    gr.appendChild(grid);
+
+    gr.appendChild(el('div', { class: 'sub', text: 'Glyph values (pie / column series)' }));
+    gr.appendChild(multiSelect(cols, state.data.roles.glyphValues, (v) => setRole('glyphValues', v)));
+    gr.appendChild(el('div', { class: 'sub', text: 'Extra tooltip fields' }));
+    gr.appendChild(multiSelect(cols, state.data.roles.tooltips, (v) => setRole('tooltips', v)));
+    panel.appendChild(gr);
+  }
+
+  /* ---- join status ----------------------------------------------------- */
+  const js = el('div', { class: 'joinstat none', id: 'joinStatus' });
+  panel.appendChild(js);
+  refreshJoinStatus();
+
+  panel.appendChild(el('div', { class: 'hint', html:
+    'Values join by the <b>link field</b> chosen in <i>Map setup</i> — the geometry\'s code column by default, ' +
+    'or its name column for name-based joins. Matching ignores case, spaces, dashes and underscores.' }));
+}
+
+function multiSelect(columns, chosen, onChange) {
+  const box = el('select', { multiple: true, size: Math.min(5, Math.max(3, columns.length)) });
+  for (const c of columns) box.appendChild(el('option', { value: c, text: c, selected: chosen.includes(c) }));
+  box.style.height = 'auto';
+  box.addEventListener('change', () => onChange(Array.from(box.selectedOptions).map((o) => o.value)));
+  return box;
+}
+
+function refreshJoinStatus() {
+  const node = $('#joinStatus');
+  if (!node) return;
+  const s = state.joinStats;
+  if (!s || !s.rows) {
+    node.className = 'joinstat none';
+    node.textContent = state.data.rows.length ? 'Bind a join column to colour the map.' : 'No data table loaded — geometry renders unstyled.';
+    return;
+  }
+  const total = s.matched + s.unmatched;
+  if (!total) { node.className = 'joinstat none'; node.textContent = 'No rows carried a join key.'; return; }
+  const pct = Math.round((s.matched / total) * 100);
+  if (s.matched === 0) {
+    node.className = 'joinstat bad';
+    node.textContent = `No rows matched the geometry. Data looks like: ${s.unmatchedSamples.join(', ')}. ` +
+      'Check the join column and the link field.';
+  } else if (s.unmatched) {
+    node.className = 'joinstat bad';
+    node.textContent = `${s.matched} of ${total} rows matched (${pct}%). Unmatched: ${s.unmatchedSamples.join(', ')}…`;
+  } else {
+    node.className = 'joinstat ok';
+    node.textContent = `All ${s.matched} rows matched the geometry.`;
+  }
+}
+
+function openPasteModal() {
+  const ta = el('textarea', { rows: 12, placeholder: 'Paste CSV or TSV, including the header row…' });
+  openModal('Paste table data', [ta], [
+    ['Cancel', closeModal, false],
+    ['Load', () => {
+      try {
+        const parsed = parseDelimitedText(ta.value, 'pasted text');
+        closeModal();
+        adoptData(parsed, 'Pasted data');
+      } catch (e) { toast(e.message, true); }
+    }, true]
+  ]);
+  setTimeout(() => ta.focus(), 40);
+}
+
+/* ============================================================ format UI ==== */
+
+let undoStack = [], redoStack = [];
+const snapshot = () => JSON.stringify(state.settings);
+
+function pushUndo() {
+  undoStack.push(snapshot());
+  if (undoStack.length > 60) undoStack.shift();
+  redoStack.length = 0;
+  refreshUndoButtons();
+}
+function refreshUndoButtons() {
+  $('#btnUndo').disabled = !undoStack.length;
+  $('#btnRedo').disabled = !redoStack.length;
+}
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(snapshot());
+  state.settings = JSON.parse(undoStack.pop());
+  refreshUndoButtons(); buildFormatPanel(); render(); saveLocal();
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(snapshot());
+  state.settings = JSON.parse(redoStack.pop());
+  refreshUndoButtons(); buildFormatPanel(); render(); saveLocal();
+}
+
+function setSetting(cardKey, key, value, withUndo = true) {
+  if (withUndo) pushUndo();
+  state.settings[cardKey][key] = value;
+}
+
+const openCards = new Set(['general', 'choropleth']);
+
+function buildFormatPanel() {
+  const panel = clear($('#panelFormat'));
+  if (!hasGeometry()) {
+    panel.appendChild(el('div', { class: 'hint', text: 'Upload geometry first — the formatting cards style what is on the map.' }));
+  }
+  CARDS.forEach((card, i) => {
+    const wrap = el('div', { class: `card${openCards.has(card.key) ? ' open' : ''}`, 'data-card': card.key });
+    const layerSlice = card.slices.find((s) => s.layer);
+    const dot = layerSlice ? el('span', { class: `lyr-on${S()[card.key][layerSlice.k] ? ' on' : ''}` }) : null;
+    const head = el('div', { class: 'head' },
+      el('span', { class: 'n', text: String(i + 1) }),
+      el('span', { class: 't', text: card.title }),
+      dot,
+      el('span', { class: 'chev', html: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>' }));
+    head.addEventListener('click', () => {
+      wrap.classList.toggle('open');
+      if (wrap.classList.contains('open')) openCards.add(card.key); else openCards.delete(card.key);
+    });
+    const body = el('div', { class: 'body' });
+    for (const slice of card.slices) body.appendChild(buildSliceRow(card.key, slice));
+    wrap.append(head, body);
+    panel.appendChild(wrap);
+  });
+  refreshSliceVisibility();
+}
+
+const debouncedRender = debounce(() => { render(); saveLocal(); }, 140);
+
+function buildSliceRow(cardKey, slice) {
+  const value = S()[cardKey][slice.k];
+  const row = el('div', { class: 'row' });
+  row.__when = slice.when;
+  const ctl = el('div', { class: 'ctl' });
+  const commit = (v, immediate) => {
+    setSetting(cardKey, slice.k, v);
+    refreshSliceVisibility();
+    if (slice.layer) {
+      const dot = $(`.card[data-card="${cardKey}"] .lyr-on`);
+      if (dot) dot.classList.toggle('on', !!v);
+    }
+    if (immediate) { render(); saveLocal(); } else debouncedRender();
+  };
+
+  if (slice.type === 'toggle') {
+    const input = el('input', { type: 'checkbox' });
+    input.checked = !!value;
+    const sw = el('span', { class: `sw${value ? ' on' : ''}` }, input, el('i'));
+    input.addEventListener('change', () => { sw.classList.toggle('on', input.checked); commit(input.checked, true); });
+    ctl.appendChild(sw);
+  } else if (slice.type === 'color') {
+    const input = el('input', { type: 'color', value: value || '#000000' });
+    input.addEventListener('input', () => commit(input.value, false));
+    ctl.appendChild(input);
+  } else if (slice.type === 'number') {
+    const input = el('input', { type: 'number', value, min: slice.min, max: slice.max, step: slice.step ?? 1 });
+    input.addEventListener('input', () => {
+      const n = parseFloat(input.value);
+      if (Number.isFinite(n)) commit(clamp(n, slice.min ?? -1e9, slice.max ?? 1e9), false);
+    });
+    ctl.appendChild(input);
+  } else if (slice.type === 'text') {
+    const input = el('input', { type: 'text', value: value || '', placeholder: slice.ph || '' });
+    input.addEventListener('input', () => commit(input.value, false));
+    ctl.appendChild(input);
+  } else if (slice.type === 'select') {
+    const opts = typeof slice.opts === 'function' ? slice.opts() : slice.opts;
+    ctl.appendChild(selectEl(opts, value, (v) => commit(v, true), { allowNone: false }));
+  }
+  row.append(el('label', { text: slice.t }), ctl);
+  if (slice.hint) row.title = slice.hint;
+  return row;
+}
+
+function refreshSliceVisibility() {
+  for (const row of $$('#panelFormat .row')) {
+    if (!row.__when) continue;
+    let visible = true;
+    try { visible = !!row.__when(S()); } catch (e) { visible = true; }
+    row.classList.toggle('hide', !visible);
+  }
+}
+
+/* ------------------------------------------------------------- themes ----- */
+
+const THEMES = {
+  'Ocean': {
+    choropleth: { mode: 'automatic', baseColor: '#1f77b4', blankColor: '#eceff3' },
+    borders: { stateColor: '#33414f', stateWidth: 1, localityColor: '#8d99a6', localityWidth: 0.5 },
+    stateLabels: { fontFamily: 'Segoe UI', color: '#16222e', haloColor: '#ffffff', haloWidth: 2, bold: true },
+    legendContainer: { background: '#ffffff', borderColor: '#ccd4dd', headerColor: '#16222e' },
+    general: { background: '#f7fafc' }
+  },
+  'Ember': {
+    choropleth: { mode: 'custom', color1: '#fff2d8', color2: '#fcd9a4', color3: '#f2a65a',
+      color4: '#d9702c', color5: '#a03d11', color6: '#6e2408', color7: '#421305', blankColor: '#f0ece7' },
+    borders: { stateColor: '#5a3a24', stateWidth: 1.1, localityColor: '#a68a72', localityWidth: 0.5 },
+    stateLabels: { fontFamily: 'Georgia', color: '#3a2415', haloColor: '#fffaf3', haloWidth: 2.2, bold: true },
+    legendContainer: { background: '#fffaf3', borderColor: '#e3d3bf', headerColor: '#3a2415' },
+    general: { background: '#fffdf9' }
+  },
+  'Slate mono': {
+    choropleth: { mode: 'automatic', baseColor: '#3d444d', blankColor: '#f1f2f4' },
+    borders: { stateColor: '#1b1e23', stateWidth: 1.2, localityColor: '#9aa0a8', localityWidth: 0.5 },
+    stateLabels: { fontFamily: 'Helvetica', color: '#14171b', haloColor: '#ffffff', haloWidth: 2.4, bold: true,
+      spreadCharacters: true },
+    legendContainer: { background: '#ffffff', borderColor: '#d4d7dc', headerColor: '#14171b' },
+    general: { background: '#ffffff' }
+  }
+};
+
+function applyTheme(name) {
+  const theme = THEMES[name];
+  if (!theme) return;
+  pushUndo();
+  for (const [cardKey, patch] of Object.entries(theme)) {
+    for (const [k, v] of Object.entries(patch)) {
+      if (cardKey === 'stateLabels') {
+        // Typography choices propagate to all three label cards.
+        for (const c of ['stateLabels', 'localityLabels', 'drillLabels']) {
+          if (k === 'bold' && c !== 'stateLabels') continue;
+          state.settings[c][k] = v;
+        }
+      } else if (state.settings[cardKey] && k in state.settings[cardKey]) {
+        state.settings[cardKey][k] = v;
+      }
+    }
+  }
+  buildFormatPanel(); render(); saveLocal();
+  toast(`Theme "${name}" applied`);
+}
+
+/* =============================================================== modal ===== */
+
+function openModal(title, bodyNodes, buttons) {
+  $('#modalTitle').textContent = title;
+  const body = clear($('#modalBody'));
+  for (const n of bodyNodes) body.appendChild(n);
+  const foot = clear($('#modalFoot'));
+  for (const [label, fn, primary] of buttons) {
+    foot.appendChild(el('button', { class: `tb-btn${primary ? ' primary' : ''}`, text: label, onclick: fn }));
+  }
+  $('#modalBack').classList.add('open');
+}
+const closeModal = () => $('#modalBack').classList.remove('open');
+
+/* ============================================================== export ===== */
+
+const EXPORT_FONT = '"Segoe UI", Helvetica, Arial, sans-serif';
+
+/**
+ * Self-contained snapshot of the live map: clone, inline the font stack, drop
+ * the blur filter (it rasterises unpredictably in Illustrator / PowerPoint),
+ * thin the label halos to a hairline (screen halos read as a chunky band at
+ * print resolution), and paint the background.
+ */
+function buildExportSvg() {
+  if (!hasGeometry()) throw new Error('Nothing to export — upload geometry first');
+  const w = state.viewportW, h = state.viewportH;
+  const clone = svgRoot.cloneNode(true);
+  clone.setAttribute('xmlns', SVGNS);
+  clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+  clone.setAttribute('width', w);
+  clone.setAttribute('height', h);
+  clone.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  clone.removeAttribute('style');
+
+  clone.querySelector('.cs-layer-glow')?.remove();
+  for (const t of clone.querySelectorAll('.cs-label text[stroke]')) t.setAttribute('stroke-width', '0.3');
+
+  const bgColor = S().general.transparentBackground ? '#ffffff' : (S().general.background || '#ffffff');
+  const bgRect = clone.querySelector('rect');
+  if (bgRect) { bgRect.setAttribute('width', w); bgRect.setAttribute('height', h); bgRect.setAttribute('fill', bgColor); }
+
+  const style = sel('style');
+  style.textContent = `svg{font-family:${EXPORT_FONT}}text{white-space:pre}`;
+  clone.insertBefore(style, clone.firstChild);
+
+  const xml = new XMLSerializer().serializeToString(clone);
+  return { xml, width: w, height: h, bgColor };
+}
+
+function exportSvg() {
+  try {
+    const { xml } = buildExportSvg();
+    downloadBlob(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }), `${exportBaseName()}.svg`);
+    toast('SVG downloaded');
+  } catch (e) { toast(e.message, true); }
+}
+
+function exportBaseName() {
+  const base = (state.geom.adm1Name || 'cartostudio').replace(/\.(geo|topo)?json$/i, '').replace(/[^\w-]+/g, '-');
+  return state.drill ? `${base}-${String(admin1NameFor(state.drill)).replace(/[^\w-]+/g, '-')}` : base;
+}
+
+/** SVG → offscreen canvas → PNG blob, at the requested scale factor. */
+function rasterise(scale) {
+  const built = buildExportSvg();
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([built.xml], { type: 'image/svg+xml;charset=utf-8' }));
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = el('canvas');
+        canvas.width = Math.round(built.width * scale);
+        canvas.height = Math.round(built.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('2D canvas unavailable');
+        ctx.fillStyle = built.bgColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((blob) => blob ? resolve({ blob, canvas, ...built })
+          : reject(new Error('Canvas produced no image')), 'image/png');
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('The browser could not rasterise the SVG')); };
+    img.src = url;
+  });
+}
+
+async function exportPng() {
+  try {
+    const scale = parseFloat($('#pngScale').value) || 2;
+    const { blob } = await rasterise(scale);
+    downloadBlob(blob, `${exportBaseName()}@${scale}x.png`);
+    toast(`PNG downloaded at ${scale}×`);
+  } catch (e) { toast(e.message, true); }
+}
+
+const PAPER_PT = {
+  a5: [419.53, 595.28], a4: [595.28, 841.89], a3: [841.89, 1190.55],
+  letter: [612, 792], legal: [612, 1008], tabloid: [792, 1224]
+};
+
+async function exportPdf() {
+  try {
+    toast('Building PDF…');
+    const JsPDF = await getJsPDF();
+    const paper = $('#pdfPaper').value;
+    const orientation = $('#pdfOrient').value;
+    const [pw, ph] = PAPER_PT[paper] || PAPER_PT.a4;
+    const pageW = orientation === 'landscape' ? ph : pw;
+    const pageH = orientation === 'landscape' ? pw : ph;
+
+    const { canvas } = await rasterise(Math.max(2, Math.ceil((pageW * 2) / state.viewportW)));
+    const doc = new JsPDF({ orientation, unit: 'pt', format: [pw, ph], compress: true });
+    const margin = 28;
+    const availW = pageW - margin * 2, availH = pageH - margin * 2;
+    const ratio = Math.min(availW / canvas.width, availH / canvas.height);
+    const drawW = canvas.width * ratio, drawH = canvas.height * ratio;
+    doc.addImage(canvas.toDataURL('image/png'), 'PNG',
+      margin + (availW - drawW) / 2, margin + (availH - drawH) / 2, drawW, drawH, undefined, 'FAST');
+
+    if ($('#pdfLegendPage').checked) { doc.addPage(); drawLegendPage(doc, pageW, pageH, margin); }
+    doc.save(`${exportBaseName()}-${paper}.pdf`);
+    toast('PDF downloaded');
+  } catch (e) { toast(e.message || String(e), true); }
+}
+
+/** Second page: the legend as a plain vector table, for print handoff. */
+function drawLegendPage(doc, pageW, pageH, margin) {
+  const li = state.last?.legendInputs;
+  let y = margin + 12;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+  doc.text('Map key', margin, y);
+  y += 22;
+  const rowH = 17;
+  const section = (title) => {
+    if (y > pageH - margin - 40) { doc.addPage(); y = margin + 20; }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(title, margin, y); y += 15;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  };
+  const swatchRow = (color, label) => {
+    if (y > pageH - margin - rowH) { doc.addPage(); y = margin + 20; }
+    const c = parseHex(color) || { r: 200, g: 200, b: 200 };
+    doc.setFillColor(c.r, c.g, c.b); doc.setDrawColor(110);
+    doc.rect(margin, y - 9, 14, 11, 'FD');
+    doc.setTextColor(30); doc.text(String(label), margin + 22, y);
+    y += rowH;
+  };
+  if (li?.value) {
+    section(li.value.title || 'Choropleth');
+    for (const cl of li.value.classes) {
+      swatchRow(cl.color, cl.label != null ? cl.label
+        : (cl.from === cl.to ? fmtNumber(cl.to, li.value.decimals, 'auto')
+          : `${fmtNumber(cl.from, li.value.decimals, 'auto')} – ${fmtNumber(cl.to, li.value.decimals, 'auto')}`));
+    }
+    y += 8;
+  }
+  if (li?.glyph) {
+    section(li.glyph.title || 'Categories');
+    for (const it of li.glyph.items) swatchRow(it.color, it.label);
+    y += 8;
+  }
+  if (li?.bubble) {
+    section(li.bubble.title || 'Bubble size');
+    swatchRow(li.bubble.fillColor, `Smallest — ${fmtNumber(li.bubble.minValue, 0, 'auto')}`);
+    swatchRow(li.bubble.fillColor, `Largest — ${fmtNumber(li.bubble.maxValue, 0, 'auto')}`);
+    y += 8;
+  }
+  if (li?.levels) {
+    section(li.levels.title || 'Admin levels');
+    for (const it of li.levels.items) swatchRow(it.color, it.label);
+    y += 8;
+  }
+  if (li?.values) {
+    section(li.values.title || 'Values on labels');
+    for (const it of li.values.items) swatchRow(it.color, it.label);
+  }
+  doc.setFontSize(8); doc.setTextColor(130);
+  doc.text(`Generated with CartoStudio · ${state.geom.adm1Name || 'custom geometry'}`, margin, pageH - margin / 2);
+}
+
+/* ========================================================== persistence ==== */
+
+/* The workspace is stored in two keys so a colour drag rewrites a couple of KB
+ * of design rather than re-serialising a multi-megabyte boundary file. */
+const LS_DESIGN = 'cartostudio.design.v1';
+const LS_PAYLOAD = 'cartostudio.payload.v1';
+const LS_MAX = 3.5 * 1024 * 1024;   // don't try to stash huge uploads
+
+function projectPayload(includeGeometry = true) {
+  return {
+    version: 1,
+    settings: state.settings,
+    mapping: state.geom.mapping,
+    roles: state.data.roles,
+    drill: state.drill,
+    geometry: includeGeometry && state.geom.adm1 ? {
+      adm1: state.geom.adm1, adm2: state.geom.adm2,
+      adm1Name: state.geom.adm1Name, adm2Name: state.geom.adm2Name,
+      adm1Props: state.geom.adm1Props, adm2Props: state.geom.adm2Props
+    } : null,
+    data: includeGeometry && state.data.rows.length ? {
+      rows: state.data.rows, columns: state.data.columns, fileName: state.data.fileName
+    } : null
+  };
+}
+
+function applyPayload(p, { withGeometry = true } = {}) {
+  if (!p || typeof p !== 'object') throw new Error('Not a CartoStudio project file');
+  invalidateAreas();
+  // Merge onto the defaults so files written by an older build still open.
+  const merged = defaultSettings();
+  for (const [card, values] of Object.entries(p.settings || {})) {
+    if (!merged[card]) continue;
+    for (const [k, v] of Object.entries(values)) if (k in merged[card]) merged[card][k] = v;
+  }
+  state.settings = merged;
+  if (p.mapping) state.geom.mapping = { ...state.geom.mapping, ...p.mapping };
+  if (p.roles) state.data.roles = { ...state.data.roles, ...p.roles,
+    glyphValues: p.roles.glyphValues || [], tooltips: p.roles.tooltips || [] };
+  if (withGeometry && p.geometry?.adm1) {
+    const g = state.geom;
+    g.adm1 = normaliseToFC(p.geometry.adm1, 'saved Admin 1');
+    g.adm2 = p.geometry.adm2 ? normaliseToFC(p.geometry.adm2, 'saved Admin 2') : null;
+    g.adm1Name = p.geometry.adm1Name || 'Admin 1';
+    g.adm2Name = p.geometry.adm2Name || '';
+    g.adm1Props = p.geometry.adm1Props?.length ? p.geometry.adm1Props : collectPropertyNames(g.adm1);
+    g.adm2Props = g.adm2 ? (p.geometry.adm2Props?.length ? p.geometry.adm2Props : collectPropertyNames(g.adm2)) : [];
+    // Saved geometry was already rewound and mapped, but re-running both is
+    // idempotent and repairs hand-edited files.
+    rewindFeatureCollection(g.adm1);
+    if (g.adm2) rewindFeatureCollection(g.adm2);
+    applyMapping(g.adm1, 1, g.mapping);
+    if (g.adm2) applyMapping(g.adm2, 2, g.mapping);
+  }
+  if (withGeometry && p.data?.rows?.length) {
+    state.data.rows = p.data.rows;
+    state.data.columns = p.data.columns || Object.keys(p.data.rows[0] || {});
+    state.data.fileName = p.data.fileName || 'restored table';
+  }
+  state.drill = p.drill || null;
+}
+
+const saveDesign = debounce(() => {
+  try { localStorage.setItem(LS_DESIGN, JSON.stringify(projectPayload(false))); }
+  catch (e) { /* private mode / quota — the session still works */ }
+}, 400);
+
+function savePayload() {
+  try {
+    const p = projectPayload(true);
+    const json = JSON.stringify({ geometry: p.geometry, data: p.data });
+    if (json.length <= LS_MAX) localStorage.setItem(LS_PAYLOAD, json);
+    else localStorage.removeItem(LS_PAYLOAD);   // too big to restore automatically
+  } catch (e) { try { localStorage.removeItem(LS_PAYLOAD); } catch (e2) { /* ignore */ } }
+}
+
+/** Design on every change; uploads only when the uploads themselves change. */
+function saveLocal(withPayload = false) {
+  saveDesign();
+  if (withPayload) savePayload();
+}
+
+function loadLocal() {
+  try {
+    const design = JSON.parse(localStorage.getItem(LS_DESIGN) || 'null');
+    const payload = JSON.parse(localStorage.getItem(LS_PAYLOAD) || 'null');
+    if (!design && !payload) return false;
+    applyPayload({ ...(design || {}), ...(payload || {}) });
+    return true;
+  } catch (e) { return false; }
+}
+
+/* URL hash carries the design only — geometry and data stay local. */
+const b64encode = (str) => btoa(String.fromCharCode(...new TextEncoder().encode(str)))
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64decode = (b64) => new TextDecoder().decode(Uint8Array.from(
+  atob(b64.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
+
+function shareLink() {
+  const payload = { version: 1, settings: state.settings, mapping: state.geom.mapping, roles: state.data.roles };
+  const url = `${location.origin}${location.pathname}#s=${b64encode(JSON.stringify(payload))}`;
+  navigator.clipboard?.writeText(url).then(
+    () => toast('Link copied — it restores the design, not the uploads'),
+    () => openModal('Shareable link', [el('textarea', { rows: 5, value: url })], [['Close', closeModal, true]]));
+  history.replaceState(null, '', url);
+}
+
+function loadFromHash() {
+  const m = /[#&]s=([^&]+)/.exec(location.hash || '');
+  if (!m) return false;
+  try { applyPayload(JSON.parse(b64decode(m[1])), { withGeometry: false }); return true; }
+  catch (e) { return false; }
+}
+
+function saveProjectFile() {
+  const json = JSON.stringify(projectPayload(true));
+  downloadBlob(new Blob([json], { type: 'application/json' }), `${exportBaseName()}-project.json`);
+  toast(`Project saved (${(json.length / 1024 / 1024).toFixed(1)} MB)`);
+}
+
+async function openProjectFile(file) {
+  try {
+    applyPayload(JSON.parse(await readFileText(file)));
+    resetView();
+    buildDataPanel(); buildFormatPanel(); render(); saveLocal(true);
+    toast(`Opened ${file.name}`);
+  } catch (e) { toast(`Could not open project: ${e.message}`, true); }
+}
+
+/* ================================================================ boot ===== */
+
+function wireMenu(buttonId, menuId, onAction) {
+  const btn = $(`#${buttonId}`), menu = $(`#${menuId}`);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasOpen = menu.classList.contains('open');
+    for (const m of $$('.menu')) m.classList.remove('open');
+    menu.classList.toggle('open', !wasOpen);
+  });
+  menu.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (!act) return;
+    menu.classList.remove('open');
+    onAction(act);
+  });
+}
+
+function wireUi() {
+  for (const b of $$('.tabs button')) {
+    b.addEventListener('click', () => {
+      for (const x of $$('.tabs button')) x.classList.toggle('on', x === b);
+      $('#panelData').classList.toggle('on', b.dataset.tab === 'data');
+      $('#panelFormat').classList.toggle('on', b.dataset.tab === 'format');
+    });
+  }
+  $('#btnSide').addEventListener('click', () => {
+    $('#side').classList.toggle('collapsed');
+    requestAnimationFrame(render);
+  });
+  $('#btnUndo').addEventListener('click', undo);
+  $('#btnRedo').addEventListener('click', redo);
+
+  wireMenu('btnExport', 'menuExport', (act) => {
+    if (act === 'svg') exportSvg();
+    if (act === 'png') exportPng();
+    if (act === 'pdf') exportPdf();
+  });
+  wireMenu('btnProject', 'menuProject', (act) => {
+    if (act === 'save-json') saveProjectFile();
+    if (act === 'copy-link') shareLink();
+    if (act === 'theme') {
+      const list = el('div');
+      for (const name of Object.keys(THEMES)) {
+        list.appendChild(el('button', { class: 'tb-btn', style: 'width:100%;margin-bottom:6px;justify-content:flex-start',
+          text: name, onclick: () => { applyTheme(name); closeModal(); } }));
+      }
+      openModal('Preset themes', [list, el('div', { class: 'hint',
+        text: 'Themes touch colours and typography only — your bindings and layer toggles stay put.' })],
+        [['Close', closeModal, false]]);
+    }
+    if (act === 'reset-fmt') {
+      pushUndo();
+      state.settings = defaultSettings();
+      buildFormatPanel(); render(); saveLocal();
+      toast('Formatting reset to defaults');
+    }
+    if (act === 'reset-all') {
+      openModal('Clear everything?', [el('p', { text:
+        'This removes the uploaded geometry, the data table and all formatting from this browser. It cannot be undone.' })], [
+        ['Cancel', closeModal, false],
+        ['Clear', () => {
+          closeModal();
+          try { localStorage.removeItem(LS_DESIGN); localStorage.removeItem(LS_PAYLOAD); } catch (e) { /* ignore */ }
+          location.hash = '';
+          location.reload();
+        }, true]
+      ]);
+    }
+  });
+  document.addEventListener('click', () => { for (const m of $$('.menu')) m.classList.remove('open'); });
+  $('#fileProject').addEventListener('change', async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (f) await openProjectFile(f);
+  });
+  $('#modalBack').addEventListener('click', (e) => { if (e.target.id === 'modalBack') closeModal(); });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+    if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    if (!mod && e.key === 'Escape' && state.drill) { state.drill = null; resetView(); render(); }
+  });
+
+  new ResizeObserver(debounce(() => { if (hasGeometry()) render(); }, 90)).observe($('#canvasWrap'));
+}
+
+async function boot() {
+  try {
+    await loadDeps();
+  } catch (e) {
+    $('#empty').innerHTML = '<div class="drop"><h2>Could not load the map libraries</h2>' +
+      '<p>CartoStudio pulls d3-geo, topojson-client, polylabel and papaparse from a CDN on first load. ' +
+      'Check your network connection (or an ad-blocker / offline proxy) and reload.</p></div>';
+    return;
+  }
+  setupSvg();
+  svgRoot.setAttribute('font-family', EXPORT_FONT);
+  // Restore the workspace first, then let a shared link override the design
+  // while keeping whatever geometry / data this browser already has.
+  loadLocal();
+  loadFromHash();
+  wireUi();
+  wireCanvasGestures();
+  buildDataPanel();
+  buildFormatPanel();
+  refreshUndoButtons();
+  render();
+
+  // Small scripting surface: handy from the browser console for batch work
+  // ("colour every map in this folder the same way") and for automated checks.
+  window.CartoStudio = { state, render, rebuildUi: () => { buildDataPanel(); buildFormatPanel(); },
+    buildExportSvg, applyTheme, exportSvg, exportPng, exportPdf };
+}
+
+boot();
+
+</script>
+</body>
+</html>

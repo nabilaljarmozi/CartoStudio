@@ -1,0 +1,293 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "ADM2_PCODE": "TF0101",
+    "ADM2_EN": "North Norvale",
+    "ADM1_PCODE": "TF01",
+    "ADM1_EN": "Norvale"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       30,
+       14
+      ],
+      [
+       32,
+       14
+      ],
+      [
+       32,
+       15
+      ],
+      [
+       30,
+       15
+      ],
+      [
+       30,
+       14
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ADM2_PCODE": "TF0102",
+    "ADM2_EN": "South Norvale",
+    "ADM1_PCODE": "TF01",
+    "ADM1_EN": "Norvale"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       30,
+       15
+      ],
+      [
+       32,
+       15
+      ],
+      [
+       32,
+       16
+      ],
+      [
+       30,
+       16
+      ],
+      [
+       30,
+       15
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ADM2_PCODE": "TF0201",
+    "ADM2_EN": "Upper Estmarch",
+    "ADM1_PCODE": "TF02",
+    "ADM1_EN": "Estmarch"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       32,
+       14
+      ],
+      [
+       34,
+       14
+      ],
+      [
+       34,
+       15
+      ],
+      [
+       32,
+       15
+      ],
+      [
+       32,
+       14
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ADM2_PCODE": "TF0202",
+    "ADM2_EN": "Lower Estmarch",
+    "ADM1_PCODE": "TF02",
+    "ADM1_EN": "Estmarch"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       32,
+       15
+      ],
+      [
+       34,
+       15
+      ],
+      [
+       34,
+       16
+      ],
+      [
+       32,
+       16
+      ],
+      [
+       32,
+       15
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ADM2_PCODE": "TF0301",
+    "ADM2_EN": "West Sudlund",
+    "ADM1_PCODE": "TF03",
+    "ADM1_EN": "Sudlund"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       30,
+       12
+      ],
+      [
+       32,
+       12
+      ],
+      [
+       32,
+       13
+      ],
+      [
+       30,
+       13
+      ],
+      [
+       30,
+       12
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ADM2_PCODE": "TF0302",
+    "ADM2_EN": "East Sudlund",
+    "ADM1_PCODE": "TF03",
+    "ADM1_EN": "Sudlund"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       30,
+       13
+      ],
+      [
+       32,
+       13
+      ],
+      [
+       32,
+       14
+      ],
+      [
+       30,
+       14
+      ],
+      [
+       30,
+       13
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ADM2_PCODE": "TF0401",
+    "ADM2_EN": "Inner Vaskaria",
+    "ADM1_PCODE": "TF04",
+    "ADM1_EN": "Vaskaria"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       32,
+       12
+      ],
+      [
+       34,
+       12
+      ],
+      [
+       34,
+       13
+      ],
+      [
+       32,
+       13
+      ],
+      [
+       32,
+       12
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ADM2_PCODE": "TF0402",
+    "ADM2_EN": "Outer Vaskaria",
+    "ADM1_PCODE": "TF04",
+    "ADM1_EN": "Vaskaria"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       32,
+       13
+      ],
+      [
+       34,
+       13
+      ],
+      [
+       34,
+       14
+      ],
+      [
+       32,
+       14
+      ],
+      [
+       32,
+       13
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}

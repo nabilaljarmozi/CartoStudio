@@ -1,0 +1,5 @@
+adm1_pcode,region_name,population,incidents,severity,clinics,schools,water_points
+TF01,Norvale,418000,132,High,40,25,15
+TF02,Estmarch,265000,47,Medium,18,30,9
+TF03,Sudlund,912000,308,Severe,75,42,60
+TF04,Vaskaria,154000,12,Low,11,6,4
