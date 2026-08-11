@@ -2,7 +2,11 @@
  *
  * A curated pool of well-known players from nations at the 2026 World Cup.
  * Ratings (OVR) are gameplay values only, not official statistics.
- * Format: [name, nationCode, position, ovr]  pos: GK | DEF | MID | FWD
+ * Format: [name, nationCode, position, ovr, wikipediaTitle?]
+ *   pos: GK | DEF | MID | FWD
+ *   wikipediaTitle is optional and only needed when the article title differs
+ *   from the player's name (ambiguous names such as "Gavi" or "Ederson").
+ *   Photos are looked up by that title at run time — see app.js.
  * Edit freely — the game reads this file at load.
  */
 
@@ -48,7 +52,7 @@ const POOL_RAW = [
   // ---- Goalkeepers ----
   ['Emiliano Martínez', 'ARG', 'GK', 88],
   ['Alisson Becker', 'BRA', 'GK', 88],
-  ['Ederson', 'BRA', 'GK', 85],
+  ['Ederson', 'BRA', 'GK', 85, 'Ederson (footballer, born 1993)'],
   ['Mike Maignan', 'FRA', 'GK', 88],
   ['Thibaut Courtois', 'BEL', 'GK', 90],
   ['Jordan Pickford', 'ENG', 'GK', 84],
@@ -61,12 +65,12 @@ const POOL_RAW = [
   ['Édouard Mendy', 'SEN', 'GK', 82],
   ['Zion Suzuki', 'JPN', 'GK', 81],
   ['Jo Hyeon-woo', 'KOR', 'GK', 79],
-  ['Matt Turner', 'USA', 'GK', 78],
+  ['Matt Turner', 'USA', 'GK', 78, 'Matt Turner (soccer)'],
   ['Luis Malagón', 'MEX', 'GK', 80],
   ['Maxime Crepeau', 'CAN', 'GK', 76],
   ['Mathew Ryan', 'AUS', 'GK', 78],
   ['Mohamed El Shenawy', 'EGY', 'GK', 79],
-  ['Raïs M’Bolhi', 'ALG', 'GK', 76],
+  ['Raïs M’Bolhi', 'ALG', 'GK', 76, "Raïs M'Bolhi"],
   ['Yassine Bounou', 'MAR', 'GK', 86],
 
   // ---- Defenders ----
@@ -85,7 +89,7 @@ const POOL_RAW = [
   ['Éder Militão', 'BRA', 'DEF', 85],
   ['Dani Carvajal', 'ESP', 'DEF', 85],
   ['Ronald Araújo', 'URU', 'DEF', 85],
-  ['Kim Min-jae', 'KOR', 'DEF', 85],
+  ['Kim Min-jae', 'KOR', 'DEF', 85, 'Kim Min-jae (footballer)'],
   ['Theo Hernández', 'FRA', 'DEF', 84],
   ['Marc Cucurella', 'ESP', 'DEF', 84],
   ['Jurriën Timber', 'NED', 'DEF', 84],
@@ -102,8 +106,8 @@ const POOL_RAW = [
   ['Davinson Sánchez', 'COL', 'DEF', 81],
   ['Evan Ndicka', 'CIV', 'DEF', 80],
   ['Sergiño Dest', 'USA', 'DEF', 80],
-  ['Chris Richards', 'USA', 'DEF', 79],
-  ['Johan Vásquez', 'MEX', 'DEF', 79],
+  ['Chris Richards', 'USA', 'DEF', 79, 'Chris Richards (soccer)'],
+  ['Johan Vásquez', 'MEX', 'DEF', 79, 'Johan Vásquez (footballer, born 1998)'],
   ['Takehiro Tomiyasu', 'JPN', 'DEF', 79],
   ['Jan Bednarek', 'POL', 'DEF', 78],
   ['Manuel Akanji', 'SUI', 'DEF', 83],
@@ -137,7 +141,7 @@ const POOL_RAW = [
   ['Ryan Gravenberch', 'NED', 'MID', 85],
   ['Bruno Guimarães', 'BRA', 'MID', 85],
   ['Mohammed Kudus', 'GHA', 'MID', 85],
-  ['Gavi', 'ESP', 'MID', 85],
+  ['Gavi', 'ESP', 'MID', 85, 'Gavi (footballer)'],
   ['Eduardo Camavinga', 'FRA', 'MID', 84],
   ['Rodrigo De Paul', 'ARG', 'MID', 84],
   ['Youri Tielemans', 'BEL', 'MID', 84],
@@ -180,7 +184,7 @@ const POOL_RAW = [
   ['Mohamed Salah', 'EGY', 'FWD', 89],
   ['Julián Álvarez', 'ARG', 'FWD', 88],
   ['Bukayo Saka', 'ENG', 'FWD', 88],
-  ['Luis Díaz', 'COL', 'FWD', 88],
+  ['Luis Díaz', 'COL', 'FWD', 88, 'Luis Díaz (footballer, born 1997)'],
   ['Lautaro Martínez', 'ARG', 'FWD', 87],
   ['Nico Williams', 'ESP', 'FWD', 87],
   ['Michael Olise', 'FRA', 'FWD', 87],
@@ -202,7 +206,7 @@ const POOL_RAW = [
   ['Romelu Lukaku', 'BEL', 'FWD', 84],
   ['Jérémy Doku', 'BEL', 'FWD', 84],
   ['Jonathan David', 'CAN', 'FWD', 84],
-  ['Estêvão', 'BRA', 'FWD', 83],
+  ['Estêvão', 'BRA', 'FWD', 83, 'Estêvão Willian'],
   ['Bradley Barcola', 'FRA', 'FWD', 83],
   ['Marcus Rashford', 'ENG', 'FWD', 82],
   ['Darwin Núñez', 'URU', 'FWD', 82],
@@ -221,7 +225,7 @@ const POOL_RAW = [
   ['Musa Al-Taamari', 'JOR', 'FWD', 80],
   ['Sardar Azmoun', 'IRN', 'FWD', 80],
   ['João Félix', 'POR', 'FWD', 80],
-  ['Julio Enciso', 'PAR', 'FWD', 79],
+  ['Julio Enciso', 'PAR', 'FWD', 79, 'Julio Enciso (footballer, born 2004)'],
   ['Enner Valencia', 'ECU', 'FWD', 79],
   ['Simon Adingra', 'CIV', 'FWD', 79],
   ['Akram Afif', 'QAT', 'FWD', 79],
@@ -234,7 +238,7 @@ const POOL_RAW = [
   ['Almoez Ali', 'QAT', 'FWD', 77],
   ['Yazan Al-Naimat', 'JOR', 'FWD', 77],
   ['Firas Al-Buraikan', 'KSA', 'FWD', 76],
-  ['Mostafa Mohamed', 'EGY', 'FWD', 78],
+  ['Mostafa Mohamed', 'EGY', 'FWD', 78, 'Mostafa Mohamed (footballer)'],
 ];
 
 // Deduplicate by name+nation, then attach ids and base prices.
@@ -251,6 +255,7 @@ const PLAYERS = (function () {
       nat: row[1],
       pos: row[2],
       ovr: row[3],
+      wiki: row[4] || row[0],
       base: Math.max(1, Math.round((row[3] - 76) * 1.2)),
     });
   });

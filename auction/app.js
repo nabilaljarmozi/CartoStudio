@@ -100,6 +100,8 @@
 
       'pos.GK': 'Goalkeeper', 'pos.DEF': 'Defender', 'pos.MID': 'Midfielder', 'pos.FWD': 'Forward',
       'posShort.GK': 'GK', 'posShort.DEF': 'DEF', 'posShort.MID': 'MID', 'posShort.FWD': 'FWD',
+      'btn.photos': 'Player photos',
+      'foot.photos': 'Portraits are fetched from Wikipedia by your browser while you play, and cached locally. Turn them off with the 📷 button — players without a photo get a generated badge.',
       'foot.note': 'Curated pool of {0} well-known players from nations at the 2026 World Cup. Ratings are gameplay values, not official statistics — edit players.js to change the pool.'
     },
 
@@ -194,6 +196,8 @@
 
       'pos.GK': 'حارس مرمى', 'pos.DEF': 'مدافع', 'pos.MID': 'وسط', 'pos.FWD': 'مهاجم',
       'posShort.GK': 'حارس', 'posShort.DEF': 'مدافع', 'posShort.MID': 'وسط', 'posShort.FWD': 'مهاجم',
+      'btn.photos': 'صور اللاعبين',
+      'foot.photos': 'الصور تُجلب من ويكيبيديا عبر متصفحك أثناء اللعب وتُحفظ محلياً. يمكنك إيقافها بزر 📷 — واللاعب الذي لا صورة له يظهر برمز مولّد.',
       'foot.note': 'قائمة مختارة من {0} لاعباً مشهوراً من منتخبات كأس العالم 2026. التقييمات لأغراض اللعب فقط وليست إحصاءات رسمية — عدّل ملف players.js لتغيير القائمة.'
     }
   };
@@ -263,6 +267,116 @@
     var s = '';
     for (var i = 0; i < 4; i++) s += abc[Math.floor(Math.random() * abc.length)];
     return 'WC26-' + s;
+  }
+
+  /* =========================================================
+   * 2b. Player photos
+   *
+   * Portraits are looked up from Wikipedia at run time (one request per 40
+   * players, cached in localStorage) and drawn straight from upload.wikimedia.org.
+   * Nothing is bundled with the game, and every player that has no photo —
+   * offline, blocked, or simply no picture in the article — falls back to a
+   * generated badge, so the game never depends on the network.
+   * ======================================================= */
+
+  var PHOTO_KEY = 'wc26:photos:v1';
+  var photosOn = true;
+  var photoUrl = {};
+  var photoRev = 0;
+  var photoFetching = false;
+
+  try { photosOn = localStorage.getItem('wc26:photosOn') !== '0'; } catch (e) {}
+  try { photoUrl = JSON.parse(localStorage.getItem(PHOTO_KEY) || '{}') || {}; } catch (e) { photoUrl = {}; }
+
+  function normKey(s) {
+    return String(s).toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\([^)]*\)/g, '')
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  var PHOTO_INDEX = {};
+  PLAYERS.forEach(function (p) {
+    [p.name, p.wiki].forEach(function (s) {
+      var k = normKey(s);
+      if (!PHOTO_INDEX[k]) PHOTO_INDEX[k] = [];
+      if (PHOTO_INDEX[k].indexOf(p.id) === -1) PHOTO_INDEX[k].push(p.id);
+    });
+  });
+
+  function fetchPhotos() {
+    if (!photosOn || photoFetching || typeof fetch !== 'function') return;
+    var todo = PLAYERS.filter(function (p) { return photoUrl[p.id] === undefined; });
+    if (!todo.length) return;
+    photoFetching = true;
+    var batches = [];
+    for (var i = 0; i < todo.length; i += 40) batches.push(todo.slice(i, i + 40));
+    var left = batches.length;
+    batches.forEach(function (batch, n) {
+      setTimeout(function () {
+        fetchPhotoBatch(batch, function () { if (--left <= 0) photoFetching = false; });
+      }, n * 300);
+    });
+  }
+
+  function fetchPhotoBatch(batch, done) {
+    var titles = batch.map(function (p) { return p.wiki; }).join('|');
+    var url = 'https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*' +
+      '&redirects=1&prop=pageimages&piprop=thumbnail&pithumbsize=320&titles=' +
+      encodeURIComponent(titles);
+    fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+      var pages = (d && d.query && d.query.pages) || {};
+      var found = {};
+      Object.keys(pages).forEach(function (k) {
+        var pg = pages[k];
+        if (!pg || !pg.thumbnail || !pg.thumbnail.source) return;
+        (PHOTO_INDEX[normKey(pg.title)] || []).forEach(function (id) {
+          found[id] = pg.thumbnail.source;
+        });
+      });
+      batch.forEach(function (p) { photoUrl[p.id] = found[p.id] || ''; });
+      try { localStorage.setItem(PHOTO_KEY, JSON.stringify(photoUrl)); } catch (e) {}
+      photoRev++;
+      if (S) render();
+      done();
+    })['catch'](function () { done(); });
+  }
+
+  function hueOf(nat) {
+    var h = 0;
+    for (var i = 0; i < nat.length; i++) h = (h * 47 + nat.charCodeAt(i) * 13) % 360;
+    return h;
+  }
+
+  function initials(name) {
+    var parts = String(name).split(/\s+/).filter(Boolean);
+    var a = parts.length ? parts[0].charAt(0) : '?';
+    var b = parts.length > 1 ? parts[parts.length - 1].charAt(0) : '';
+    return (a + b).toUpperCase();
+  }
+
+  function photoOf(p) { return photosOn ? (photoUrl[p.id] || '') : ''; }
+
+  function avatarInner(p) {
+    var url = photoOf(p);
+    return escapeHtml(initials(p.name)) +
+      (url ? '<img src="' + escapeHtml(url) + '" alt="" loading="lazy" decoding="async">' : '');
+  }
+
+  // A portrait that fails to load (broken link, offline, blocked host) drops out
+  // and leaves the generated initials badge behind it.
+  function wireAvatars(root) {
+    Array.prototype.forEach.call(root.querySelectorAll('.avatar img'), function (img) {
+      img.addEventListener('error', function () {
+        if (img.parentNode) img.parentNode.removeChild(img);
+      });
+    });
+  }
+
+  function avatarHtml(p, extra) {
+    return '<div class="avatar ring-' + p.pos + (extra ? ' ' + extra : '') +
+      '" style="--hue:' + hueOf(p.nat) + '" title="' + escapeHtml(p.name) + '">' +
+      avatarInner(p) + '</div>';
   }
 
   /* ---- sound ---- */
@@ -448,7 +562,6 @@
         S.phase = 'bidding';
         pushLog('l.up', [p.name, natLabel(p.nat), money(p.base)]);
         beep(760, 0.09);
-        squadSig = ['', ''];
         render();
         broadcast();
         return;
@@ -505,7 +618,6 @@
     }
     S.phase = 'verdict';
     S.lot.remain = 0;
-    squadSig = ['', ''];
     render();
     broadcast();
 
@@ -596,7 +708,7 @@
           '<div class="budget" id="tbud-' + s + '"></div>' +
           '<div class="max-note" id="tmax-' + s + '"></div>' +
           '<div class="slots" id="tslots-' + s + '"></div>' +
-          '<ul class="squad" id="tsquad-' + s + '"></ul>' +
+          '<div id="tpitch-' + s + '"></div>' +
           '<div class="bid-pad">' +
             '<button class="bid-btn" data-seat="' + s + '" data-k="0"></button>' +
             '<button class="bid-btn" data-seat="' + s + '" data-k="1"></button>' +
@@ -664,6 +776,52 @@
     return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
   }
 
+  // The squad drawn onto a pitch: forwards on top, keeper at the back,
+  // one slot per position the formation asks for. Empty slots stay visible
+  // so you can see at a glance what you still have to buy.
+  var PITCH_ROWS = ['FWD', 'MID', 'DEF', 'GK'];
+
+  function pitchHtml(seat, big) {
+    var byPos = { GK: [], DEF: [], MID: [], FWD: [] };
+    S.teams[seat].squad.forEach(function (p) { byPos[p.pos].push(p); });
+
+    var html = '<div class="pitch' + (big ? ' big' : '') + '">';
+    PITCH_ROWS.forEach(function (pos) {
+      html += '<div class="pitch-row">';
+      for (var i = 0; i < S.formation[pos]; i++) {
+        var p = byPos[pos][i];
+        if (p) {
+          html += '<div class="pslot">' +
+            '<div class="av-wrap">' + avatarHtml(p) +
+              '<span class="ovr-dot">' + p.ovr + '</span></div>' +
+            '<span class="nm">' + escapeHtml(p.name) + '</span>' +
+            '<span class="pr">' + money(p.price) + '</span></div>';
+        } else {
+          html += '<div class="pslot empty">' +
+            '<div class="avatar empty">' + t('posShort.' + pos) + '</div>' +
+            '<span class="nm">—</span></div>';
+        }
+      }
+      html += '</div>';
+    });
+    return html + '</div>';
+  }
+
+  var lotPhotoSig = '';
+
+  function renderLotPhoto(p) {
+    var sig = p.id + '|' + photoOf(p) + '|' + photosOn;
+    if (sig === lotPhotoSig) return;
+    lotPhotoSig = sig;
+    var el = $('lot-photo');
+    el.className = 'avatar lot-photo ring-' + p.pos;
+    el.style.setProperty('--hue', hueOf(p.nat));
+    el.title = p.name;
+    el.innerHTML = avatarInner(p);
+    wireAvatars(el.parentNode);
+    $('lot-flag').textContent = NATIONS[p.nat] ? NATIONS[p.nat].flag : '';
+  }
+
   function renderLot() {
     var v = $('verdict');
     if (S.phase === 'done' || !S.lot) return;
@@ -671,6 +829,7 @@
 
     $('lot-pos').className = 'pos-badge pos-' + p.pos;
     $('lot-pos').textContent = t('pos.' + p.pos);
+    renderLotPhoto(p);
     $('lot-name').textContent = p.name;
     $('lot-nat').textContent = natLabel(p.nat);
     $('lot-ovr').textContent = p.ovr;
@@ -726,8 +885,10 @@
     bud.className = 'budget' + (team.budget <= S.budget0 * 0.15 ? ' low' : '');
     $('tmax-' + seat).textContent = t('g.max', [money(Math.max(0, maxBid(seat)))]);
 
-    // slots
-    var sig = team.squad.length + '|' + team.budget + '|' + lang;
+    // Slot pips + formation pitch. The signature is the squad's actual contents,
+    // so the pitch (and every photo in it) is only rebuilt when it really changes.
+    var sig = team.squad.map(function (p) { return p.id + ':' + p.price; }).join(',') +
+      '|' + lang + '|' + photoRev + '|' + photosOn;
     if (squadSig[seat] !== sig) {
       squadSig[seat] = sig;
       var slotsHtml = '';
@@ -738,20 +899,8 @@
         }
       });
       $('tslots-' + seat).innerHTML = slotsHtml;
-
-      var listHtml = '';
-      var sorted = team.squad.slice().sort(function (a, b) {
-        return POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos);
-      });
-      sorted.forEach(function (p) {
-        listHtml += '<li>' +
-          '<span class="tag pos-' + p.pos + '">' + t('posShort.' + p.pos) + '</span>' +
-          '<span class="nm">' + escapeHtml(p.name) + ' <span style="color:var(--muted)">' +
-          (NATIONS[p.nat] ? NATIONS[p.nat].flag : '') + ' ' + p.ovr + '</span></span>' +
-          '<span class="pr">' + money(p.price) + '</span></li>';
-      });
-      $('tsquad-' + seat).innerHTML = listHtml ||
-        '<li class="empty-squad">' + t('slots.empty') + '</li>';
+      $('tpitch-' + seat).innerHTML = pitchHtml(seat, false);
+      wireAvatars($('tpitch-' + seat));
     }
 
     // bid pad
@@ -857,6 +1006,7 @@
       card.innerHTML =
         '<div class="team-head"><span class="team-name">' +
           (win === seat ? '🏆 ' : '') + escapeHtml(team.name) + '</span></div>' +
+        pitchHtml(seat, true) +
         '<ul class="squad">' + (rows || '<li class="empty-squad">' + t('slots.empty') + '</li>') + '</ul>' +
         '<div class="score-line"><span>' + t('res.rating') + '</span><b>' + sc.rating + '</b></div>' +
         '<div class="score-line"><span>' + t('res.chem') + '</span><b>' + iso('+' + sc.chem) + '</b></div>' +
@@ -865,6 +1015,7 @@
         '<div class="score-line"><span>' + t('res.left') + '</span><b>' + money(sc.left) + '</b></div>' +
         '<div class="score-line total"><span>' + t('res.total') + '</span><span>' + sc.total + '</span></div>';
       grid.appendChild(card);
+      wireAvatars(card);
     });
 
     beep(880, 0.2, 0.07);
@@ -1046,6 +1197,19 @@
     } else fallbackCopy(net.code, flash);
   });
 
+  $('photo-btn').addEventListener('click', function () {
+    photosOn = !photosOn;
+    try { localStorage.setItem('wc26:photosOn', photosOn ? '1' : '0'); } catch (e) {}
+    $('photo-btn').textContent = photosOn ? '📷' : '🚫';
+    $('photo-btn').classList.toggle('on', photosOn);
+    lotPhotoSig = '';
+    if (photosOn) fetchPhotos();
+    if (S) {
+      squadSig = ['', ''];
+      if (S.phase === 'done') showResults(); else render();
+    }
+  });
+
   $('sound-btn').addEventListener('click', function () {
     soundOn = !soundOn;
     $('sound-btn').textContent = soundOn ? '🔊' : '🔇';
@@ -1122,6 +1286,8 @@
     $('again-btn').textContent = t('btn.again');
     $('copy-btn').textContent = t('btn.copy');
     $('footer-note').textContent = t('foot.note', [PLAYERS.length]);
+    $('photo-credit').textContent = t('foot.photos');
+    $('photo-btn').title = t('btn.photos');
 
     // Formation option labels use position abbreviations.
     var opts = $('in-formation').options;
@@ -1136,5 +1302,9 @@
     if (S && !$('results').classList.contains('hidden')) showResults();
   }
 
+  $('photo-btn').textContent = photosOn ? '📷' : '🚫';
+  $('photo-btn').classList.toggle('on', photosOn);
+
   applyLang();
+  fetchPhotos();
 })();

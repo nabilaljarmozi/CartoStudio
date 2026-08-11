@@ -50,6 +50,30 @@ order, so you can replay an identical auction.
 - Base price comes from the player's rating, so Mbappé opens far higher than a
   squad-filler goalkeeper.
 
+## Photos
+
+Player portraits are looked up from Wikipedia **by your browser, while you play** —
+five requests for the whole pool, cached in `localStorage` so later games are
+instant. Roughly 170 of the 182 players have one.
+
+Nothing is bundled with the game and nothing is stored on a server. If you are
+offline, the request is blocked, or a player simply has no picture in their article,
+that player falls back to a generated badge — initials on a colour derived from their
+country, ringed in their position colour. The game never waits on the network.
+
+The **📷 button** in the top bar turns photos off entirely; the setting sticks.
+
+When an article title differs from the player's name — ambiguous ones like *Gavi*
+or *Ederson* — `players.js` carries a fifth field with the exact title to look up.
+
+## Formation
+
+Each squad is drawn on a pitch rather than listed: forwards along the top, the
+keeper at the back, one slot per position the formation asks for. Filled slots show
+the portrait, rating, name and fee; empty slots stay as dashed outlines, so what you
+still have to buy is obvious at a glance. The same pitch appears full-size on the
+results screen for both managers.
+
 ## Scoring
 
 ```
@@ -79,12 +103,14 @@ Editing it is the point — it is a plain array, one line per player:
 
 ```js
 ['Kylian Mbappé', 'FRA', 'FWD', 93],
+['Gavi', 'ESP', 'MID', 85, 'Gavi (footballer)'],
 ```
 
-`[name, nation code, position, rating]`. Positions are `GK`, `DEF`, `MID`, `FWD`.
-Add a nation to the `NATIONS` map at the top of the file (flag emoji + English and
-Arabic names) and it shows up everywhere automatically. Base prices are derived from
-the rating, so a new player needs no price of its own.
+`[name, nation code, position, rating]`, plus an optional Wikipedia article title
+when it differs from the name. Positions are `GK`, `DEF`, `MID`, `FWD`. Add a nation
+to the `NATIONS` map at the top of the file (flag emoji + English and Arabic names)
+and it shows up everywhere automatically. Base prices are derived from the rating,
+so a new player needs no price of its own.
 
 ## Files
 

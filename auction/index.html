@@ -22,6 +22,7 @@
     <div class="spacer"></div>
     <span class="chip hidden" id="code-chip">🔑 <b id="code-text">—</b></span>
     <span class="chip hidden" id="elapsed-chip">⏱ <span id="elapsed-text">0:00</span></span>
+    <button class="ghost-btn on" id="photo-btn" title="Photos">📷</button>
     <button class="ghost-btn on" id="sound-btn" title="Sound">🔊</button>
     <button class="ghost-btn" id="lang-btn">العربية</button>
   </div>
@@ -109,6 +110,7 @@
         <div class="card lot">
           <div id="lot-body">
             <span class="pos-badge pos-GK" id="lot-pos">GK</span>
+            <div class="lot-photo-wrap"><div class="avatar lot-photo" id="lot-photo"></div><span class="lot-photo-flag" id="lot-flag"></span></div>
             <div class="lot-name" id="lot-name">—</div>
             <div class="lot-meta">
               <span id="lot-nat">—</span>
@@ -160,6 +162,7 @@
   </section>
 
   <p class="note" style="text-align:center;margin-top:28px" id="footer-note"></p>
+  <p class="credit" style="text-align:center;margin-top:-14px" id="photo-credit"></p>
 </div>
 
 <script src="players.js"></script>
