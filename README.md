@@ -251,6 +251,13 @@ colleague.
   Safari 16.4+). Older browsers fall back to uncompressed base64, which is
   roughly ten times longer.
 
+## Also in this repo
+
+[`auction/`](auction/) — **World Cup 2026 Auction**, an unrelated two-player
+football auction game. Same idea, no build step: open `auction/index.html`, two
+managers get $100M each, and the computer auctions World Cup 2026 stars against a
+countdown clock. English and Arabic.
+
 ## Author
 
 **Nabil ALJARMOZI** — [linkedin.com/in/nabilaljarmozi](https://www.linkedin.com/in/nabilaljarmozi/)

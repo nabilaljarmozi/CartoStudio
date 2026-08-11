@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Cup 2026 Auction — مزاد كأس العالم</title>
+<meta name="description" content="Two-player football auction: $100M each, bid against the clock for World Cup 2026 stars.">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⚽</text></svg>">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="ball">⚽</span>
+      <div>
+        <span id="ttl">World Cup 2026 Auction</span>
+        <small id="ttl-sub">2 players · $100M each · beat the clock</small>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <span class="chip hidden" id="code-chip">🔑 <b id="code-text">—</b></span>
+    <span class="chip hidden" id="elapsed-chip">⏱ <span id="elapsed-text">0:00</span></span>
+    <button class="ghost-btn on" id="sound-btn" title="Sound">🔊</button>
+    <button class="ghost-btn" id="lang-btn">العربية</button>
+  </div>
+
+  <!-- ============ SETUP ============ -->
+  <section id="setup">
+    <div class="card">
+      <h2 id="s-title">Set up the auction</h2>
+      <p class="sub" id="s-sub">
+        Two managers, one shared game code. The computer puts World Cup 2026 stars up for auction one
+        by one — outbid your rival before the clock runs out and fill every position in your squad.
+      </p>
+
+      <div class="grid">
+        <label class="field">
+          <span id="l-p1">Manager 1 name</span>
+          <input type="text" id="in-p1" value="Manager 1" maxlength="18">
+        </label>
+        <label class="field">
+          <span id="l-p2">Manager 2 name</span>
+          <input type="text" id="in-p2" value="Manager 2" maxlength="18">
+        </label>
+        <label class="field">
+          <span id="l-budget">Budget each ($M)</span>
+          <input type="number" id="in-budget" value="100" min="20" max="500" step="5">
+        </label>
+        <label class="field">
+          <span id="l-timer">Seconds per lot</span>
+          <input type="number" id="in-timer" value="20" min="5" max="120" step="1">
+        </label>
+        <label class="field">
+          <span id="l-reset">Seconds added by a bid</span>
+          <input type="number" id="in-reset" value="10" min="3" max="60" step="1">
+        </label>
+        <label class="field">
+          <span id="l-formation">Squad shape</span>
+          <select id="in-formation">
+            <option value="classic">1 GK · 2 DEF · 2 MID · 1 FWD (6)</option>
+            <option value="attack">1 GK · 1 DEF · 2 MID · 2 FWD (6)</option>
+            <option value="eight">1 GK · 3 DEF · 2 MID · 2 FWD (8)</option>
+            <option value="eleven">1 GK · 4 DEF · 4 MID · 3 FWD (11)</option>
+          </select>
+        </label>
+      </div>
+
+      <p class="sub" style="margin:20px 0 8px" id="l-how">How are you playing?</p>
+      <div class="modes">
+        <button class="mode on" data-mode="local">
+          <b id="m-local">One screen (hot seat)</b>
+          <span id="m-local-d">Both managers on the same device. Each has their own bid buttons.</span>
+        </button>
+        <button class="mode" data-mode="host">
+          <b id="m-host">Two windows — create code</b>
+          <span id="m-host-d">You are Manager 1. Share the code with a second tab/window on this computer.</span>
+        </button>
+        <button class="mode" data-mode="guest">
+          <b id="m-guest">Two windows — join with code</b>
+          <span id="m-guest-d">You are Manager 2. Enter the code your rival created.</span>
+        </button>
+      </div>
+
+      <label class="field hidden" id="join-wrap" style="margin-top:14px;max-width:280px">
+        <span id="l-join">Game code</span>
+        <input type="text" id="in-code" placeholder="WC26-XXXX" maxlength="10">
+      </label>
+
+      <div class="row" style="margin-top:22px">
+        <button class="primary-btn" id="start-btn">Start the auction</button>
+        <span class="note" id="start-note"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 id="r-title">Rules</h2>
+      <div class="note" id="rules-body"></div>
+    </div>
+  </section>
+
+  <!-- ============ AUCTION ============ -->
+  <section id="game" class="hidden">
+    <div class="stage">
+      <div id="team0-col"></div>
+
+      <div class="lot-col">
+        <div class="card lot">
+          <div id="lot-body">
+            <span class="pos-badge pos-GK" id="lot-pos">GK</span>
+            <div class="lot-name" id="lot-name">—</div>
+            <div class="lot-meta">
+              <span id="lot-nat">—</span>
+              <span class="ovr"><span id="lot-ovr">—</span><small id="ovr-label">OVR</small></span>
+              <span id="lot-base">—</span>
+            </div>
+            <div class="bid-now" id="bid-now">$0M</div>
+            <div class="bid-holder" id="bid-holder">—</div>
+            <div class="timer-track"><div class="timer-fill" id="timer-fill"></div></div>
+            <div class="clock"><b id="clock-text">0.0</b><span id="clock-unit">s</span></div>
+          </div>
+          <div class="verdict hidden" id="verdict"></div>
+        </div>
+
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <span class="note" id="lot-counter">—</span>
+            <div class="row">
+              <button class="ghost-btn" id="pause-btn">⏸</button>
+              <button class="ghost-btn" id="quit-btn">✖</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="team1-col"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="log-title">Auction log</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+
+  <!-- ============ RESULTS ============ -->
+  <section id="results" class="hidden">
+    <div class="winner-banner">
+      <div class="trophy">🏆</div>
+      <h1 id="win-title">—</h1>
+      <div class="note" id="win-sub">—</div>
+    </div>
+    <div class="result-grid" id="result-grid"></div>
+    <div class="card">
+      <div class="row">
+        <button class="primary-btn" id="again-btn">Play again</button>
+        <button class="ghost-btn" id="copy-btn">📋 Copy result</button>
+      </div>
+    </div>
+  </section>
+
+  <p class="note" style="text-align:center;margin-top:28px" id="footer-note"></p>
+</div>
+
+<script src="players.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
