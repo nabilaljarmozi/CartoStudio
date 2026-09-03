@@ -172,11 +172,20 @@ control. Choosing one fills the class colours below it, so the palette stays
 editable afterwards; nudging any of those colours by hand switches the label back
 to *Custom*, because it is no longer that scheme.
 
+**Reverse scheme** flips the palette — blue-to-red instead of red-to-blue, or a
+sequential ramp running dark-to-light. It applies to whatever is selected and to
+every preview in the list, so browsing while reversed shows what you would
+actually get. Reversal happens after sampling, so the endpoints stay the
+palette's true extremes.
+
 ColorBrewer publishes a separate palette for each class count rather than one
-long ramp to be sampled, so changing *Number of classes* re-derives the scheme at
-the new size. YlOrRd at five classes is `#ffffb2 #fecc5c #fd8d3c #f03b20 #bd0026`;
-at three it becomes `#ffeda0 #feb24c #f03b20`, not the first three of the five.
-The exact palettes come from `d3-scale-chromatic`, so they match the site.
+long ramp to be sampled, so the scheme is always derived at the count the map is
+actually drawing with — and only that many Class rows appear in the card. YlOrRd
+at five classes is `#ffffb2 #fecc5c #fd8d3c #f03b20 #bd0026`; at three it becomes
+`#ffeda0 #feb24c #f03b20`, not the first three of the five. The count comes from
+the classification rather than from the setting, so a quantile that collapses on
+tied values shows the classes it really produced. The exact palettes come from
+`d3-scale-chromatic`, so they match the site.
 
 ## Export
 

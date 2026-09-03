@@ -428,7 +428,7 @@ const CB_QUALITATIVE = ['Accent', 'Dark2', 'Paired', 'Pastel1', 'Pastel2', 'Set1
 /** `k` colours from a named scheme. Falls back to even sampling when the
  *  scheme has no palette at exactly that size, and cycles a qualitative
  *  scheme that is shorter than asked for. */
-function schemeColors(name, k) {
+function schemeColors(name, k, reverse) {
   const scheme = name && d3chromatic ? d3chromatic['scheme' + name] : null;
   if (!scheme || !scheme.length || k < 1) return null;
   // Sequential and diverging schemes are indexed by class count and start at 3,
@@ -436,12 +436,16 @@ function schemeColors(name, k) {
   const indexed = Array.isArray(scheme[scheme.length - 1]);
   const base = indexed ? scheme[clamp(k, 3, scheme.length - 1)] : scheme;
   if (!base || !base.length) return null;
-  if (base.length === k) return base.slice();
-  if (base.length > k) {
-    if (k === 1) return [base[0]];
-    return Array.from({ length: k }, (_, i) => base[Math.round((i * (base.length - 1)) / (k - 1))]);
+  let out;
+  if (base.length === k) out = base.slice();
+  else if (base.length > k) {
+    out = k === 1 ? [base[0]]
+      : Array.from({ length: k }, (_, i) => base[Math.round((i * (base.length - 1)) / (k - 1))]);
+  } else {
+    out = Array.from({ length: k }, (_, i) => base[i % base.length]);
   }
-  return Array.from({ length: k }, (_, i) => base[i % base.length]);
+  // Reverse after sampling, so the endpoints stay the palette's true extremes.
+  return reverse ? out.reverse() : out;
 }
 
 /** Accepts `abc`, `#abc`, `aabbcc`, `#AABBCC`; returns `#aabbcc` or null. */
@@ -597,6 +601,20 @@ const FONTS = ['Segoe UI', 'Helvetica', 'Arial', 'Georgia', 'Times New Roman', '
   'Trebuchet MS', 'Courier New'].map((f) => [f, f]);
 const NUMFMT = [['auto', 'Auto'], ['thousands', 'Thousands (K)'], ['millions', 'Millions (M)'], ['percent', 'Percent']];
 
+/**
+ * How many class colours the map is really using. After a render that is the
+ * classification's own answer — quantile can collapse to fewer classes than
+ * requested when values tie — falling back to the requested count before the
+ * first render. Both the palette size and the visible Class rows key off this,
+ * so the card never shows a swatch the map has no use for.
+ */
+function choroplethSlots() {
+  const cs = S().choropleth;
+  if (state.classSlots) return clamp(state.classSlots, 1, 7);
+  return cs.classification === 'categorical' ? 7 : clamp(cs.classCount, 2, 7);
+}
+const glyphSlots = () => clamp(state.data.roles.glyphValues.length || 8, 1, 8);
+
 /** Slice list shared by the three label cards. */
 function labelSlices(defs) {
   return [
@@ -679,19 +697,32 @@ const CARDS = [
       when: (s) => s.choropleth.classification !== 'categorical' },
     { k: 'scheme', t: 'Colour scheme', type: 'ramp', d: '',
       families: ['sequential', 'diverging', 'qualitative'],
-      // Categorical fills every slot, since categories cycle through them;
-      // a graduated ramp only needs one colour per class.
-      count: () => (S().choropleth.classification === 'categorical'
-        ? 7 : clamp(S().choropleth.classCount, 2, 7)) },
+      count: choroplethSlots },
+    { k: 'schemeReverse', t: 'Reverse scheme', type: 'toggle', d: false,
+      when: (s) => !!s.choropleth.scheme },
     { k: 'baseColor', t: 'Base colour', type: 'color', d: '#1f77b4',
       when: (s) => s.choropleth.mode === 'automatic' && s.choropleth.classification !== 'categorical' },
-    { k: 'color1', t: 'Class 1', type: 'color', ramped: true, d: '#deebf7', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color2', t: 'Class 2', type: 'color', ramped: true, d: '#9ecae1', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color3', t: 'Class 3', type: 'color', ramped: true, d: '#4292c6', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color4', t: 'Class 4', type: 'color', ramped: true, d: '#2171b5', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color5', t: 'Class 5', type: 'color', ramped: true, d: '#084594', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color6', t: 'Class 6', type: 'color', ramped: true, d: '#08306b', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color7', t: 'Class 7', type: 'color', ramped: true, d: '#041e42', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color1', t: 'Class 1', type: 'color', ramped: true, d: '#deebf7',
+      when: (s) => (s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical')
+        && 1 <= choroplethSlots() },
+    { k: 'color2', t: 'Class 2', type: 'color', ramped: true, d: '#9ecae1',
+      when: (s) => (s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical')
+        && 2 <= choroplethSlots() },
+    { k: 'color3', t: 'Class 3', type: 'color', ramped: true, d: '#4292c6',
+      when: (s) => (s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical')
+        && 3 <= choroplethSlots() },
+    { k: 'color4', t: 'Class 4', type: 'color', ramped: true, d: '#2171b5',
+      when: (s) => (s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical')
+        && 4 <= choroplethSlots() },
+    { k: 'color5', t: 'Class 5', type: 'color', ramped: true, d: '#084594',
+      when: (s) => (s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical')
+        && 5 <= choroplethSlots() },
+    { k: 'color6', t: 'Class 6', type: 'color', ramped: true, d: '#08306b',
+      when: (s) => (s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical')
+        && 6 <= choroplethSlots() },
+    { k: 'color7', t: 'Class 7', type: 'color', ramped: true, d: '#041e42',
+      when: (s) => (s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical')
+        && 7 <= choroplethSlots() },
     { k: 'blankColor', t: 'No-data colour', type: 'color', d: '#eeeeee' },
     { k: 'blankTransparent', t: 'Transparent for no-data', type: 'toggle', d: false },
     { k: 'zeroAsBlank', t: 'Treat 0 as no-data', type: 'toggle', d: false },
@@ -725,15 +756,25 @@ const CARDS = [
     { k: 'strokeWidth', t: 'Stroke width', type: 'number', d: 1, min: 0, max: 8, step: 0.25 },
     { k: 'opacity', t: 'Opacity', type: 'number', d: 0.9, min: 0, max: 1, step: 0.05 },
     { k: 'scheme', t: 'Colour scheme', type: 'ramp', d: '',
-      families: ['qualitative', 'sequential', 'diverging'], count: () => 8 },
-    { k: 'color1', t: 'Category 1', type: 'color', ramped: true, d: '#1f77b4' },
-    { k: 'color2', t: 'Category 2', type: 'color', ramped: true, d: '#ff7f0e' },
-    { k: 'color3', t: 'Category 3', type: 'color', ramped: true, d: '#2ca02c' },
-    { k: 'color4', t: 'Category 4', type: 'color', ramped: true, d: '#d62728' },
-    { k: 'color5', t: 'Category 5', type: 'color', ramped: true, d: '#9467bd' },
-    { k: 'color6', t: 'Category 6', type: 'color', ramped: true, d: '#8c564b' },
-    { k: 'color7', t: 'Category 7', type: 'color', ramped: true, d: '#e377c2' },
-    { k: 'color8', t: 'Category 8', type: 'color', ramped: true, d: '#7f7f7f' },
+      families: ['qualitative', 'sequential', 'diverging'], count: glyphSlots },
+    { k: 'schemeReverse', t: 'Reverse scheme', type: 'toggle', d: false,
+      when: (s) => !!s.glyphChart.scheme },
+    { k: 'color1', t: 'Category 1', type: 'color', ramped: true, d: '#1f77b4',
+      when: () => 1 <= glyphSlots() },
+    { k: 'color2', t: 'Category 2', type: 'color', ramped: true, d: '#ff7f0e',
+      when: () => 2 <= glyphSlots() },
+    { k: 'color3', t: 'Category 3', type: 'color', ramped: true, d: '#2ca02c',
+      when: () => 3 <= glyphSlots() },
+    { k: 'color4', t: 'Category 4', type: 'color', ramped: true, d: '#d62728',
+      when: () => 4 <= glyphSlots() },
+    { k: 'color5', t: 'Category 5', type: 'color', ramped: true, d: '#9467bd',
+      when: () => 5 <= glyphSlots() },
+    { k: 'color6', t: 'Category 6', type: 'color', ramped: true, d: '#8c564b',
+      when: () => 6 <= glyphSlots() },
+    { k: 'color7', t: 'Category 7', type: 'color', ramped: true, d: '#e377c2',
+      when: () => 7 <= glyphSlots() },
+    { k: 'color8', t: 'Category 8', type: 'color', ramped: true, d: '#7f7f7f',
+      when: () => 8 <= glyphSlots() },
     { k: 'labelPlacement', t: 'Label position vs glyph', type: 'select', d: 'above', opts: [
       ['above', 'Above'], ['below', 'Below'], ['left', 'Left'], ['right', 'Right'], ['center', 'Centre']] },
     { k: 'constantSize', t: 'Constant size on zoom', type: 'toggle', d: true },
@@ -2379,15 +2420,11 @@ function render() {
     : valued;
   const colorValues = classifySet.map((v) => v.datum?.colorValue).filter((v) => !isBlank(v));
   const breaks = buildBreaks(colorValues, cs.classification, cs.classCount, cs.manualBreaks);
-  const customColors = [cs.color1, cs.color2, cs.color3, cs.color4, cs.color5, cs.color6, cs.color7];
-  const colors = cs.mode === 'custom'
-    ? customColors.slice(0, Math.max(1, breaks.classCount))
-    : rampColors(cs.baseColor, Math.max(1, breaks.classCount));
   const blankFill = cs.blankTransparent ? 'transparent' : cs.blankColor;
 
   // Categorical: unique raw values in natural order (so "Severity 10" follows
-  // "Severity 9"), cycling through the custom class colours.
-  let categoryColors = null, categoricalClasses = null;
+  // "Severity 9").
+  let categoricalClasses = null;
   if (cs.classification === 'categorical') {
     const seen = new Set(), cats = [];
     for (const v of classifySet) {
@@ -2397,9 +2434,31 @@ function render() {
       if (!seen.has(k)) { seen.add(k); cats.push(k); }
     }
     cats.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    categoricalClasses = cats;
+  }
+
+  // How many colours this render needs — the classification's own answer, which
+  // for quantile can be fewer than requested when values tie. Everything else
+  // keys off it, so the swatches, the scheme preview and the map agree.
+  state.classSlots = cs.classification === 'categorical'
+    ? clamp(categoricalClasses.length || 1, 1, 7)
+    : clamp(breaks.classCount || cs.classCount, 1, 7);
+  const slots = state.classSlots;
+
+  // A scheme is sampled at that count and written back into the class colours,
+  // so picking one, changing the class count and reversing all land in the same
+  // place with nothing lagging a step behind.
+  const schemeCols = syncSchemeColors('choropleth', slots);
+  const customColors = [cs.color1, cs.color2, cs.color3, cs.color4, cs.color5, cs.color6, cs.color7];
+  const colors = cs.mode === 'custom'
+    ? (schemeCols || customColors.slice(0, slots))
+    : rampColors(cs.baseColor, slots);
+
+  let categoryColors = null;
+  if (categoricalClasses) {
     categoryColors = new Map();
-    categoricalClasses = cats.map((cat, i) => {
-      const color = customColors[i % customColors.length];
+    categoricalClasses = categoricalClasses.map((cat, i) => {
+      const color = colors[i % colors.length];
       categoryColors.set(cat, color);
       return { color, label: cat };
     });
@@ -2453,10 +2512,11 @@ function render() {
   }
   applyBorders(L.adm1, L.adm2, st.borders);
 
+  const glyphPalette = syncSchemeColors('glyphChart', glyphSlots())
+    || [st.glyphChart.color1, st.glyphChart.color2, st.glyphChart.color3, st.glyphChart.color4,
+        st.glyphChart.color5, st.glyphChart.color6, st.glyphChart.color7, st.glyphChart.color8];
   const glyphResult = renderGlyphs(L.glyph, projection, visibleFeatures, lookup, pcodeKey,
-    { ...st.glyphChart, colors: [st.glyphChart.color1, st.glyphChart.color2, st.glyphChart.color3,
-      st.glyphChart.color4, st.glyphChart.color5, st.glyphChart.color6, st.glyphChart.color7,
-      st.glyphChart.color8] }, state.zoom);
+    { ...st.glyphChart, colors: glyphPalette }, state.zoom);
   const bubbleResult = renderBubbles(L.bubble, projection, visibleFeatures, lookup, pcodeKey,
     st.bubbles, state.zoom);
 
@@ -2537,8 +2597,7 @@ function render() {
     valueClasses = valueClasses.concat([{ color: cs.blankColor, from: 0, to: 0, label: 'No data' }]);
   }
   const roles = state.data.roles;
-  const glyphColors = [st.glyphChart.color1, st.glyphChart.color2, st.glyphChart.color3, st.glyphChart.color4,
-    st.glyphChart.color5, st.glyphChart.color6, st.glyphChart.color7, st.glyphChart.color8];
+  const glyphColors = glyphPalette;
 
   const legendInputs = {
     width, height,
@@ -2568,6 +2627,7 @@ function render() {
   applyZoom();
   renderChrome(view);
   refreshChromeState();
+  refreshSliceVisibility();   // class-colour rows track the rendered class count
   wireInteraction(adm1Nodes, adm2Nodes, view, adm1Level, areas);
 
   state.last = { projection, view, areas, adm1Level, legendInputs };
@@ -3289,9 +3349,9 @@ function buildSliceRow(cardKey, slice) {
     }
     // A ColorBrewer ramp is defined per class count, so re-derive it when the
     // count changes instead of leaving colours from the old size.
-    if (cardKey === 'choropleth' && (slice.k === 'classCount' || slice.k === 'classification')) {
-      if (applyScheme('choropleth')) syncControl('choropleth', 'scheme');
-    }
+    // Reversing changes every palette in the list, not just the chosen one, so
+    // the cached strips have to go. render() re-derives the colours themselves.
+    if (slice.k === 'schemeReverse') syncControl(cardKey, 'scheme');
     refreshSliceVisibility();
     if (slice.layer) {
       const dot = $(`.card[data-card="${cardKey}"] .lyr-on`);
@@ -3381,39 +3441,41 @@ function syncControl(cardKey, key) {
 }
 
 /**
- * Write a ColorBrewer scheme into a card's colour slots. The swatches stay the
- * single source of truth for rendering — the scheme just fills them — so a
- * palette can always be nudged by hand afterwards.
+ * Derive the active scheme's colours at `count`, write them into the card's
+ * colour slots, and push them into the controls that show them. Called from
+ * render with the count the map actually used, so the swatches, the preview
+ * strip and the polygons can never disagree. Returns the colours, or null when
+ * no scheme is set — the caller then falls back to the hand-picked slots.
  */
-function applyScheme(cardKey) {
-  const slice = CARD_BY_KEY[cardKey].slices.find((x) => x.type === 'ramp');
-  const name = slice && S()[cardKey][slice.k];
-  if (!name) return false;
-  const colors = schemeColors(name, slice.count());
-  if (!colors) return false;
+function syncSchemeColors(cardKey, count) {
+  const card = state.settings[cardKey];
+  if (!card?.scheme) return null;
+  const colors = schemeColors(card.scheme, count, card.schemeReverse);
+  if (!colors) return null;
+  let changed = false;
   colors.forEach((color, i) => {
     const key = `color${i + 1}`;
-    if (!(key in state.settings[cardKey])) return;
-    state.settings[cardKey][key] = color;
+    if (!(key in card) || card[key] === color) return;
+    card[key] = color;
     syncControl(cardKey, key);
+    changed = true;
   });
-  return true;
+  // The preview strip is drawn at `count`, so it has to be redrawn whenever the
+  // count changes even if the colours themselves did not.
+  if (changed || card._schemeSlots !== count) {
+    card._schemeSlots = count;
+    syncControl(cardKey, 'scheme');
+  }
+  return colors;
 }
 
-/**
- * Scheme picker. A native <select> can only offer names, and a palette is not
- * something you choose by name — so this is a listbox whose every row carries
- * the palette it stands for, rendered at the class count in use. It expands in
- * normal flow rather than floating, which keeps it from being clipped by the
- * scrolling format panel.
- */
 function rampControl(cardKey, slice, value) {
   const wrap = el('div', { class: 'ramp-ctl' });
   const nameOf = (v) => v || 'Custom';
 
   const stripFor = (schemeName) => {
     const strip = el('div', { class: 'ramp-strip' });
-    const colors = schemeColors(schemeName, slice.count());
+    const colors = schemeColors(schemeName, slice.count(), S()[cardKey].schemeReverse);
     if (!colors) strip.classList.add('empty');
     else for (const c of colors) strip.appendChild(el('i', { style: `background:${c}` }));
     return strip;
@@ -3446,11 +3508,10 @@ function rampControl(cardKey, slice, value) {
       state.settings.choropleth.mode = 'custom';
       syncControl('choropleth', 'mode');
     }
-    applyScheme(cardKey);
-    redrawPreview();
     for (const opt of menu.querySelectorAll('.ramp-opt')) {
       opt.setAttribute('aria-selected', String((opt.dataset.scheme || '') === schemeName));
     }
+    redrawPreview();
     close();
     refreshSliceVisibility();
     liveRender();
@@ -3497,7 +3558,14 @@ function rampControl(cardKey, slice, value) {
   menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') { close(); trigger.focus(); } });
 
   wrap.append(trigger, preview, menu);
-  wrap.__redraw = redrawPreview;
+  // Redrawing covers a reversal too, which invalidates every cached strip in
+  // the list; drop it and let the next open rebuild.
+  wrap.__redraw = () => {
+    redrawPreview();
+    built = false;
+    clear(menu);
+    close();
+  };
   return wrap;
 }
 
@@ -3768,9 +3836,15 @@ const LS_PAYLOAD = 'cartostudio.payload.v1';
 const LS_MAX = 3.5 * 1024 * 1024;   // don't try to stash huge uploads
 
 function projectPayload(includeGeometry = true) {
+  // `_schemeSlots` is render bookkeeping, not a setting; strip it so it never
+  // travels in a project file, a link or the stored workspace.
+  const settings = {};
+  for (const [card, values] of Object.entries(state.settings)) {
+    settings[card] = Object.fromEntries(Object.entries(values).filter(([k]) => !k.startsWith('_')));
+  }
   return {
     version: 1,
-    settings: state.settings,
+    settings,
     mapping: state.geom.mapping,
     roles: state.data.roles,
     drill: state.drill,
@@ -4176,7 +4250,11 @@ function wireUi() {
   $('#modalBack').addEventListener('click', (e) => { if (e.target.id === 'modalBack') closeModal(); });
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') {
+      for (const m of $$('.ramp-menu')) m.hidden = true;
+      for (const t of $$('.ramp-trigger')) t.setAttribute('aria-expanded', 'false');
+      closeModal();
+    }
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
