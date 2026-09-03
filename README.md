@@ -88,6 +88,20 @@ When both Admin 1 and Admin 2 columns are bound, rows key on Admin 2 and roll up
 to Admin 1 (sums for measures, modal category for categorical, first non-empty
 for text) whenever the Admin 1 view needs a value.
 
+### Filtering areas
+
+**Filter — Admin 1** in the Data panel is a slicer: a searchable checklist of
+areas, with *Select all* and *Clear*. Unticking one narrows the map to the rest.
+
+The filter applies before everything else, so it changes what the map is *about*
+rather than dimming part of it: the projection refits, the classification
+recomputes on the areas left in scope, the legends follow, and the drill
+prev/next arrows step only through the filtered set. Drilling into an area that
+is later filtered out returns to the full view. Filtering to every area is the
+same as no filter, and stores as none.
+
+The filter travels with a project file, a share link and the stored workspace.
+
 ### 3. Link field — join by code or by name
 
 *Map setup → Admin 1 link field* picks the geometry property your data column is
@@ -182,10 +196,16 @@ ColorBrewer publishes a separate palette for each class count rather than one
 long ramp to be sampled, so the scheme is always derived at the count the map is
 actually drawing with — and only that many Class rows appear in the card. YlOrRd
 at five classes is `#ffffb2 #fecc5c #fd8d3c #f03b20 #bd0026`; at three it becomes
-`#ffeda0 #feb24c #f03b20`, not the first three of the five. The count comes from
-the classification rather than from the setting, so a quantile that collapses on
-tied values shows the classes it really produced. The exact palettes come from
-`d3-scale-chromatic`, so they match the site.
+`#ffeda0 #feb24c #f03b20`, not the first three of the five. The exact palettes
+come from `d3-scale-chromatic`, so they match the site.
+
+You get the number of classes you asked for. Quantile has to drop duplicate
+thresholds — two classes sharing a bound would leave one empty — which in a
+column with many repeated values (lots of zeros, an ordinal score) silently
+returns fewer classes than requested. CartoStudio re-quantises over the distinct
+values in that case, so five classes stay five. When the column genuinely holds
+fewer distinct values than classes, the card says so rather than quietly
+dropping one.
 
 ## Export
 

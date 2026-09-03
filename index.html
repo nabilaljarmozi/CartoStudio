@@ -138,6 +138,8 @@ h1,h2,h3,h4{margin:0;font-weight:600}
 /* rows */
 .row{display:flex;align-items:center;gap:8px;padding:4px 0;min-height:28px}
 .row.hide{display:none}
+.row.note{padding:0 0 4px}
+.row.note .hint{margin:0}
 .row > label{flex:1;color:var(--ink-2);font-size:12.2px;min-width:0}
 .row > .ctl{flex:0 0 132px;display:flex;justify-content:flex-end;align-items:center;gap:6px}
 .row.stack{flex-direction:column;align-items:stretch;gap:4px}
@@ -233,6 +235,19 @@ table.mini th{color:var(--ink-2);font-weight:600}
 .ramp-opt:hover{background:var(--accent-soft)}
 .ramp-opt[aria-selected="true"]{background:var(--accent-soft)}
 .ramp-opt[aria-selected="true"] .ramp-name{font-weight:600;color:var(--accent)}
+
+/* area filter */
+.filter-menu{margin-top:5px}
+.filter-search{margin:2px 2px 6px;width:calc(100% - 4px);height:26px}
+.filter-bulk{display:flex;gap:6px;padding:0 2px 6px}
+.filter-bulk button{flex:1;height:24px;border:1px solid var(--line);background:var(--panel);
+  border-radius:5px;font-size:11.5px}
+.filter-bulk button:hover{border-color:var(--accent);color:var(--accent)}
+.filter-opt{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:4px;cursor:pointer}
+.filter-opt:hover{background:var(--accent-soft)}
+.filter-opt.hide{display:none}
+.filter-opt input{margin:0;flex:0 0 auto}
+.filter-opt code{font-size:10.5px;color:var(--ink-2);background:var(--panel-2);padding:1px 4px;border-radius:3px}
 
 /* sheet picker */
 .sheet-list{display:flex;flex-direction:column;gap:6px}
@@ -687,6 +702,16 @@ const CARDS = [
       ['quantile', 'Quantile'], ['equal', 'Equal interval'], ['manual', 'Manual breaks'], ['categorical', 'Categorical']] },
     { k: 'classCount', t: 'Number of classes', type: 'number', d: 5, min: 2, max: 7, step: 1,
       when: (s) => s.choropleth.classification !== 'categorical' && s.choropleth.classification !== 'manual' },
+    { k: '_classNote', type: 'note',
+      text: () => {
+        const asked = clamp(S().choropleth.classCount, 2, 7);
+        const got = state.classSlots;
+        return got && got < asked
+          ? `Only ${got} distinct value${got === 1 ? '' : 's'} in this column, so the map shows `
+            + `${got} class${got === 1 ? '' : 'es'}.`
+          : '';
+      },
+      when: (s) => s.choropleth.classification !== 'categorical' },
     { k: 'classifyScope', t: 'Classify on', type: 'select', d: 'visible',
       opts: [['visible', 'Visible features'], ['all', 'All features (stable while drilling)']],
       hint: 'Visible-only recomputes the breaks for whatever is on screen; All keeps one scale so colours stay comparable between drill levels.' },
@@ -870,7 +895,7 @@ function defaultSettings() {
     out[card.key] = {};
     // `info` rows are read-only credits, not state: they never round-trip
     // through localStorage, the project file or the URL hash.
-    for (const s of card.slices) if (s.type !== 'info') out[card.key][s.k] = s.d;
+    for (const s of card.slices) if (s.type !== 'info' && s.type !== 'note') out[card.key][s.k] = s.d;
   }
   return out;
 }
@@ -894,6 +919,7 @@ const state = {
     }
   },
   settings: defaultSettings(),
+  filter: [],              // ADM1_PCODEs in scope; empty means everything
   drill: null,             // ADM1_PCODE currently drilled into
   zoom: 1, panX: 0, panY: 0,
   viewportW: 800, viewportH: 600,
@@ -1307,16 +1333,30 @@ function buildBreaks(values, method, classCount, manualText) {
     for (let i = 1; i < k; i++) breaks.push(min + step * i);
     return { breaks, min, max, classCount: k };
   }
-  // quantile — interpolated order statistics, then dedupe (heavily tied data
-  // collapses to fewer effective classes and the legend should say so).
-  const breaks = [];
-  for (let i = 1; i < k; i++) {
-    const q = (i / k) * (sorted.length - 1);
-    const lo = Math.floor(q), hi = Math.ceil(q);
-    breaks.push(lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (q - lo));
+  // Quantile: interpolated order statistics. Duplicate thresholds have to be
+  // dropped — two classes with the same bounds would leave one of them empty —
+  // but doing only that silently returns fewer classes than asked for whenever
+  // values tie, which is the norm in real tables (a column with many zeros, an
+  // ordinal severity score). Re-quantising over the DISTINCT values gives the
+  // requested count back, and only genuinely caps out when the data holds
+  // fewer distinct values than classes.
+  const quantileBreaks = (arr) => {
+    const out = [];
+    for (let i = 1; i < k; i++) {
+      const q = (i / k) * (arr.length - 1);
+      const lo = Math.floor(q), hi = Math.ceil(q);
+      out.push(lo === hi ? arr[lo] : arr[lo] + (arr[hi] - arr[lo]) * (q - lo));
+    }
+    const cleaned = [];
+    for (const v of out) if (!cleaned.length || v > cleaned[cleaned.length - 1]) cleaned.push(v);
+    return cleaned;
+  };
+  let cleaned = quantileBreaks(sorted);
+  if (cleaned.length < k - 1) {
+    const distinct = Array.from(new Set(sorted));
+    if (distinct.length >= k) cleaned = quantileBreaks(distinct);
+    else if (distinct.length > cleaned.length + 1) cleaned = distinct.slice(1);   // one class per value
   }
-  const cleaned = [];
-  for (const v of breaks) if (!cleaned.length || v > cleaned[cleaned.length - 1]) cleaned.push(v);
   return { breaks: cleaned, min, max, classCount: cleaned.length + 1 };
 }
 
@@ -2340,8 +2380,19 @@ function admin1NameFor(pcode) {
   const f = (state.geom.adm1?.features || []).find((x) => x.properties.ADM1_PCODE === pcode);
   return f ? (f.properties.ADM1_EN || f.properties.ADM1_PCODE || pcode) : pcode;
 }
+/** Set of Admin 1 codes currently in scope, or null when nothing is filtered. */
+function filterSet() {
+  if (!state.filter.length) return null;
+  const known = new Set((state.geom.adm1?.features || []).map((f) => f.properties.ADM1_PCODE));
+  const chosen = state.filter.filter((p) => known.has(p));
+  // A filter that matches nothing would blank the map; treat it as no filter.
+  return chosen.length && chosen.length < known.size ? new Set(chosen) : null;
+}
+
 function admin1NavOrder() {
+  const inFilter = filterSet();
   return (state.geom.adm1?.features || [])
+    .filter((f) => !inFilter || inFilter.has(f.properties.ADM1_PCODE))
     .map((f) => ({ p: f.properties.ADM1_PCODE, n: f.properties.ADM1_EN || f.properties.ADM1_PCODE || '' }))
     .filter((x) => x.p)
     .sort((a, b) => String(a.n).localeCompare(String(b.n), undefined, { numeric: true }))
@@ -2372,8 +2423,14 @@ function render() {
   state.joinStats = stats;
   const adm1Level = Array.from(areas.values()).some((a) => a.level === 1) ? areas : aggregateToAdmin1(areas);
 
-  const adm1All = state.geom.adm1.features;
-  const adm2All = state.geom.adm2?.features || [];
+  // A filter narrows what the map is about, so it applies before anything else
+  // — projection fit, classification and legends all follow from it.
+  const inFilter = filterSet();
+  const adm1All = inFilter
+    ? state.geom.adm1.features.filter((f) => inFilter.has(f.properties.ADM1_PCODE))
+    : state.geom.adm1.features;
+  const adm2All = (state.geom.adm2?.features || []).filter(
+    (f) => !inFilter || inFilter.has(f.properties.ADM1_PCODE));
   let adm1Visible = adm1All;
   let adm2Visible = view === 'admin2' ? adm2All : [];
   if (state.drill) {
@@ -3172,6 +3229,9 @@ function buildDataPanel() {
     panel.appendChild(gr);
   }
 
+  /* ---- filter ---------------------------------------------------------- */
+  if (g.adm1) panel.appendChild(buildFilterGroup());
+
   /* ---- join status ----------------------------------------------------- */
   const js = el('div', { class: 'joinstat none', id: 'joinStatus' });
   panel.appendChild(js);
@@ -3180,6 +3240,94 @@ function buildDataPanel() {
   panel.appendChild(el('div', { class: 'hint', html:
     'Values join by the <b>link field</b> chosen in <i>Map setup</i> — the geometry\'s code column by default, ' +
     'or its name column for name-based joins. Matching ignores case, spaces, dashes and underscores.' }));
+}
+
+/**
+ * Slicer for the Admin 1 areas in scope. Everything downstream — the projection
+ * fit, the classification, the legends, the drill order — reads the same filter,
+ * so narrowing to three regions produces the map of those three regions rather
+ * than a highlighted subset of the whole.
+ */
+function buildFilterGroup() {
+  const features = state.geom.adm1.features;
+  const areas = features
+    .map((f) => ({ code: f.properties.ADM1_PCODE, name: f.properties.ADM1_EN || f.properties.ADM1_PCODE }))
+    .filter((a) => a.code)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true }));
+  const chosen = new Set(state.filter);
+  const active = chosen.size && chosen.size < areas.length;
+  const grp = group(`Filter — ${alias1()}`,
+    active ? { text: `${chosen.size} of ${areas.length}`, ok: true } : { text: 'all shown' });
+
+  const label = el('span', { class: 'ramp-name',
+    text: active ? `${chosen.size} of ${areas.length} shown` : `All ${areas.length} shown` });
+  const trigger = el('button', { class: 'ramp-trigger', type: 'button', 'aria-haspopup': 'listbox',
+    'aria-expanded': 'false' }, label,
+    el('span', { class: 'chev', html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" '
+      + 'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
+      + '<path d="m6 9 6 6 6-6"/></svg>' }));
+  const menu = el('div', { class: 'ramp-menu filter-menu', role: 'listbox', hidden: true });
+
+  const apply = () => {
+    // "everything ticked" is the same as no filter, and stores as one.
+    state.filter = chosen.size === areas.length ? [] : Array.from(chosen);
+    if (state.drill && state.filter.length && !chosen.has(state.drill)) state.drill = null;
+    buildDataPanel();
+    render();
+    saveLocal(true);
+  };
+
+  const search = el('input', { type: 'text', class: 'filter-search', placeholder: 'Search…' });
+  search.addEventListener('click', (e) => e.stopPropagation());
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    for (const rowEl of menu.querySelectorAll('.filter-opt')) {
+      rowEl.classList.toggle('hide', !!q && !rowEl.dataset.name.includes(q));
+    }
+  });
+  const bulk = el('div', { class: 'filter-bulk' },
+    el('button', { type: 'button', text: 'Select all', onclick: (e) => {
+      e.stopPropagation();
+      for (const a of areas) chosen.add(a.code);
+      apply();
+    } }),
+    el('button', { type: 'button', text: 'Clear', onclick: (e) => {
+      e.stopPropagation();
+      chosen.clear();
+      apply();
+    } }));
+  menu.append(search, bulk);
+  for (const area of areas) {
+    const box = el('input', { type: 'checkbox' });
+    box.checked = !chosen.size || chosen.has(area.code);
+    const opt = el('label', { class: 'filter-opt', 'data-name': String(area.name).toLowerCase() },
+      box, el('span', { class: 'ramp-name', text: area.name }),
+      el('code', { text: area.code }));
+    box.addEventListener('change', () => {
+      // First tick out of "all shown" means "only this one", not "all but none".
+      if (!chosen.size) for (const a of areas) chosen.add(a.code);
+      if (box.checked) chosen.add(area.code); else chosen.delete(area.code);
+      apply();
+    });
+    menu.appendChild(opt);
+  }
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasOpen = !menu.hidden;
+    for (const other of $$('.ramp-menu')) other.hidden = true;
+    menu.hidden = wasOpen;
+    trigger.setAttribute('aria-expanded', String(!wasOpen));
+    if (!menu.hidden) search.focus();
+  });
+  menu.addEventListener('click', (e) => e.stopPropagation());
+
+  grp.append(trigger, menu);
+  if (active) {
+    grp.appendChild(el('button', { class: 'tb-btn', style: 'width:100%;margin-top:7px;justify-content:center',
+      text: `Show all ${areas.length}`, onclick: () => { chosen.clear(); apply(); } }));
+  }
+  return grp;
 }
 
 function multiSelect(columns, chosen, onChange) {
@@ -3362,6 +3510,13 @@ function buildSliceRow(cardKey, slice) {
     saveLocal();   // itself debounced, so this is cheap per keystroke
   };
 
+  if (slice.type === 'note') {
+    row.classList.add('note');
+    row.appendChild(el('div', { class: 'hint warn' }));
+    row.dataset.slice = slice.k;
+    row.__note = slice.text;
+    return row;
+  }
   if (slice.type === 'info') {
     // Read-only row: the value comes from the schema, never from stored state.
     ctl.appendChild(slice.href
@@ -3571,9 +3726,17 @@ function rampControl(cardKey, slice, value) {
 
 function refreshSliceVisibility() {
   for (const row of $$('#panelFormat .row')) {
-    if (!row.__when) continue;
     let visible = true;
-    try { visible = !!row.__when(S()); } catch (e) { visible = true; }
+    if (row.__when) {
+      try { visible = !!row.__when(S()); } catch (e) { visible = true; }
+    }
+    // A note earns its row only while it has something to say.
+    if (row.__note) {
+      let text = '';
+      try { text = row.__note() || ''; } catch (e) { text = ''; }
+      row.querySelector('.hint').textContent = text;
+      visible = visible && !!text;
+    }
     row.classList.toggle('hide', !visible);
   }
 }
@@ -3847,6 +4010,7 @@ function projectPayload(includeGeometry = true) {
     settings,
     mapping: state.geom.mapping,
     roles: state.data.roles,
+    filter: state.filter,
     drill: state.drill,
     geometry: includeGeometry && state.geom.adm1 ? {
       adm1: state.geom.adm1, adm2: state.geom.adm2,
@@ -3892,6 +4056,7 @@ function applyPayload(p, { withGeometry = true } = {}) {
     state.data.columns = p.data.columns || Object.keys(p.data.rows[0] || {});
     state.data.fileName = p.data.fileName || 'restored table';
   }
+  state.filter = Array.isArray(p.filter) ? p.filter : [];
   state.drill = p.drill || null;
 }
 
