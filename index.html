@@ -207,6 +207,15 @@ table.mini th{color:var(--ink-2);font-weight:600}
 .modal footer{padding:11px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:var(--panel-2)}
 .modal .row > .ctl{flex:0 0 180px}
 
+/* colour + ramp controls */
+.ctl input.hex{width:76px;flex:0 0 76px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11.5px;text-transform:lowercase;padding:0 5px}
+.ctl input.hex.bad{border-color:var(--danger);background:#fdf3f2}
+.ramp-ctl{display:flex;flex-direction:column;gap:5px;width:100%}
+.ramp-preview{display:flex;height:15px;border-radius:4px;overflow:hidden;border:1px solid var(--line)}
+.ramp-preview i{flex:1}
+.ramp-preview.empty{background:repeating-linear-gradient(45deg,#eef0f4,#eef0f4 4px,#e2e6ec 4px,#e2e6ec 8px)}
+
 /* sheet picker */
 .sheet-list{display:flex;flex-direction:column;gap:6px}
 .sheet-pick{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;
@@ -364,7 +373,7 @@ body.view-only #canvasWrap{background:none}
 
 /* ---------------------------------------------------------------- deps ---- */
 const CDN = ['https://esm.sh', 'https://cdn.jsdelivr.net/npm'];
-let d3geo, d3poly, topojson, polylabel, Papa;
+let d3geo, d3poly, topojson, polylabel, Papa, d3chromatic;
 
 async function loadDeps() {
   const tryHost = async (host) => {
@@ -374,7 +383,8 @@ async function loadDeps() {
       import(/* @vite-ignore */ j('d3-polygon@3')),
       import(/* @vite-ignore */ j('topojson-client@3')),
       import(/* @vite-ignore */ j('polylabel@1.1.0')),
-      import(/* @vite-ignore */ j('papaparse@5.4.1'))
+      import(/* @vite-ignore */ j('papaparse@5.4.1')),
+      import(/* @vite-ignore */ j('d3-scale-chromatic@3'))
     ]);
   };
   let mods = null, lastErr = null;
@@ -385,6 +395,43 @@ async function loadDeps() {
   [d3geo, d3poly, topojson] = mods;
   polylabel = mods[3].default || mods[3];
   Papa = mods[4].default || mods[4];
+  d3chromatic = mods[5];
+}
+
+/* ------------------------------------------------------ ColorBrewer ------- */
+/* Scheme names as published on colorbrewer2.org. d3-scale-chromatic exposes
+ * sequential and diverging schemes as arrays indexed by class count, and
+ * qualitative ones as a single flat array. */
+const CB_SEQUENTIAL = ['Blues', 'BuGn', 'BuPu', 'GnBu', 'Greens', 'Greys', 'Oranges', 'OrRd',
+  'PuBu', 'PuBuGn', 'PuRd', 'Purples', 'RdPu', 'Reds', 'YlGn', 'YlGnBu', 'YlOrBr', 'YlOrRd'];
+const CB_DIVERGING = ['BrBG', 'PiYG', 'PRGn', 'PuOr', 'RdBu', 'RdGy', 'RdYlBu', 'RdYlGn', 'Spectral'];
+const CB_QUALITATIVE = ['Accent', 'Dark2', 'Paired', 'Pastel1', 'Pastel2', 'Set1', 'Set2', 'Set3'];
+
+/** `k` colours from a named scheme. Falls back to even sampling when the
+ *  scheme has no palette at exactly that size, and cycles a qualitative
+ *  scheme that is shorter than asked for. */
+function schemeColors(name, k) {
+  const scheme = name && d3chromatic ? d3chromatic['scheme' + name] : null;
+  if (!scheme || !scheme.length || k < 1) return null;
+  // Sequential and diverging schemes are indexed by class count and start at 3,
+  // so entries 0-2 are holes — test the last entry, not the first.
+  const indexed = Array.isArray(scheme[scheme.length - 1]);
+  const base = indexed ? scheme[clamp(k, 3, scheme.length - 1)] : scheme;
+  if (!base || !base.length) return null;
+  if (base.length === k) return base.slice();
+  if (base.length > k) {
+    if (k === 1) return [base[0]];
+    return Array.from({ length: k }, (_, i) => base[Math.round((i * (base.length - 1)) / (k - 1))]);
+  }
+  return Array.from({ length: k }, (_, i) => base[i % base.length]);
+}
+
+/** Accepts `abc`, `#abc`, `aabbcc`, `#AABBCC`; returns `#aabbcc` or null. */
+function normaliseHex(raw) {
+  const m = String(raw || '').trim().replace(/^#/, '');
+  if (/^[0-9a-f]{3}$/i.test(m)) return ('#' + m[0] + m[0] + m[1] + m[1] + m[2] + m[2]).toLowerCase();
+  if (/^[0-9a-f]{6}$/i.test(m)) return ('#' + m).toLowerCase();
+  return null;
 }
 
 /* Lazily loaded, only when the user actually exports / uploads that format. */
@@ -612,15 +659,21 @@ const CARDS = [
     { k: 'mode', t: 'Colour mode', type: 'select', d: 'automatic',
       opts: [['automatic', 'Automatic ramp'], ['custom', 'Custom classes']],
       when: (s) => s.choropleth.classification !== 'categorical' },
+    { k: 'scheme', t: 'ColorBrewer scheme', type: 'ramp', d: '',
+      families: ['sequential', 'diverging', 'qualitative'],
+      // Categorical fills every slot, since categories cycle through them;
+      // a graduated ramp only needs one colour per class.
+      count: () => (S().choropleth.classification === 'categorical'
+        ? 7 : clamp(S().choropleth.classCount, 2, 7)) },
     { k: 'baseColor', t: 'Base colour', type: 'color', d: '#1f77b4',
       when: (s) => s.choropleth.mode === 'automatic' && s.choropleth.classification !== 'categorical' },
-    { k: 'color1', t: 'Class 1', type: 'color', d: '#deebf7', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color2', t: 'Class 2', type: 'color', d: '#9ecae1', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color3', t: 'Class 3', type: 'color', d: '#4292c6', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color4', t: 'Class 4', type: 'color', d: '#2171b5', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color5', t: 'Class 5', type: 'color', d: '#084594', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color6', t: 'Class 6', type: 'color', d: '#08306b', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
-    { k: 'color7', t: 'Class 7', type: 'color', d: '#041e42', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color1', t: 'Class 1', type: 'color', ramped: true, d: '#deebf7', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color2', t: 'Class 2', type: 'color', ramped: true, d: '#9ecae1', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color3', t: 'Class 3', type: 'color', ramped: true, d: '#4292c6', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color4', t: 'Class 4', type: 'color', ramped: true, d: '#2171b5', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color5', t: 'Class 5', type: 'color', ramped: true, d: '#084594', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color6', t: 'Class 6', type: 'color', ramped: true, d: '#08306b', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
+    { k: 'color7', t: 'Class 7', type: 'color', ramped: true, d: '#041e42', when: (s) => s.choropleth.mode === 'custom' || s.choropleth.classification === 'categorical' },
     { k: 'blankColor', t: 'No-data colour', type: 'color', d: '#eeeeee' },
     { k: 'blankTransparent', t: 'Transparent for no-data', type: 'toggle', d: false },
     { k: 'zeroAsBlank', t: 'Treat 0 as no-data', type: 'toggle', d: false },
@@ -653,14 +706,16 @@ const CARDS = [
     { k: 'stroke', t: 'Stroke colour', type: 'color', d: '#ffffff' },
     { k: 'strokeWidth', t: 'Stroke width', type: 'number', d: 1, min: 0, max: 8, step: 0.25 },
     { k: 'opacity', t: 'Opacity', type: 'number', d: 0.9, min: 0, max: 1, step: 0.05 },
-    { k: 'color1', t: 'Category 1', type: 'color', d: '#1f77b4' },
-    { k: 'color2', t: 'Category 2', type: 'color', d: '#ff7f0e' },
-    { k: 'color3', t: 'Category 3', type: 'color', d: '#2ca02c' },
-    { k: 'color4', t: 'Category 4', type: 'color', d: '#d62728' },
-    { k: 'color5', t: 'Category 5', type: 'color', d: '#9467bd' },
-    { k: 'color6', t: 'Category 6', type: 'color', d: '#8c564b' },
-    { k: 'color7', t: 'Category 7', type: 'color', d: '#e377c2' },
-    { k: 'color8', t: 'Category 8', type: 'color', d: '#7f7f7f' },
+    { k: 'scheme', t: 'ColorBrewer scheme', type: 'ramp', d: '',
+      families: ['qualitative', 'sequential', 'diverging'], count: () => 8 },
+    { k: 'color1', t: 'Category 1', type: 'color', ramped: true, d: '#1f77b4' },
+    { k: 'color2', t: 'Category 2', type: 'color', ramped: true, d: '#ff7f0e' },
+    { k: 'color3', t: 'Category 3', type: 'color', ramped: true, d: '#2ca02c' },
+    { k: 'color4', t: 'Category 4', type: 'color', ramped: true, d: '#d62728' },
+    { k: 'color5', t: 'Category 5', type: 'color', ramped: true, d: '#9467bd' },
+    { k: 'color6', t: 'Category 6', type: 'color', ramped: true, d: '#8c564b' },
+    { k: 'color7', t: 'Category 7', type: 'color', ramped: true, d: '#e377c2' },
+    { k: 'color8', t: 'Category 8', type: 'color', ramped: true, d: '#7f7f7f' },
     { k: 'labelPlacement', t: 'Label position vs glyph', type: 'select', d: 'above', opts: [
       ['above', 'Above'], ['below', 'Below'], ['left', 'Left'], ['right', 'Right'], ['center', 'Centre']] },
     { k: 'constantSize', t: 'Constant size on zoom', type: 'toggle', d: true },
@@ -3205,6 +3260,22 @@ function buildSliceRow(cardKey, slice) {
   const ctl = el('div', { class: 'ctl' });
   const commit = (v) => {
     setSetting(cardKey, slice.k, v);
+    // Hand-editing a colour a scheme produced means it is no longer that
+    // scheme; say so rather than leaving a label that lies.
+    if (slice.ramped) {
+      const ramp = CARD_BY_KEY[cardKey].slices.find((x) => x.type === 'ramp');
+      if (ramp && state.settings[cardKey][ramp.k]) {
+        state.settings[cardKey][ramp.k] = '';
+        syncControl(cardKey, ramp.k);
+        const preview = $(`.card[data-card="${cardKey}"] .ramp-preview`);
+        if (preview) { clear(preview); preview.classList.add('empty'); }
+      }
+    }
+    // A ColorBrewer ramp is defined per class count, so re-derive it when the
+    // count changes instead of leaving colours from the old size.
+    if (cardKey === 'choropleth' && (slice.k === 'classCount' || slice.k === 'classification')) {
+      applyScheme('choropleth');
+    }
     refreshSliceVisibility();
     if (slice.layer) {
       const dot = $(`.card[data-card="${cardKey}"] .lyr-on`);
@@ -3227,9 +3298,31 @@ function buildSliceRow(cardKey, slice) {
     input.addEventListener('change', () => { sw.classList.toggle('on', input.checked); commit(input.checked); });
     ctl.appendChild(sw);
   } else if (slice.type === 'color') {
-    const input = el('input', { type: 'color', value: value || '#000000' });
-    input.addEventListener('input', () => commit(input.value));
-    ctl.appendChild(input);
+    // Swatch and hex box are two views of one value: the OS picker for browsing,
+    // typed hex for pasting an exact brand or ColorBrewer colour.
+    const swatch = el('input', { type: 'color', value: value || '#000000' });
+    const hex = el('input', { type: 'text', class: 'hex', value: value || '',
+      maxlength: 7, spellcheck: 'false', 'aria-label': `${slice.t} hex code` });
+    swatch.addEventListener('input', () => {
+      hex.value = swatch.value;
+      hex.classList.remove('bad');
+      commit(swatch.value);
+    });
+    hex.addEventListener('input', () => {
+      const v = normaliseHex(hex.value);
+      hex.classList.toggle('bad', !v);
+      if (!v) return;             // keep typing — half a hex code is not an edit
+      swatch.value = v;
+      commit(v);
+    });
+    // Leaving a half-typed value snaps back to what is actually applied.
+    hex.addEventListener('blur', () => {
+      hex.value = S()[cardKey][slice.k];
+      hex.classList.remove('bad');
+    });
+    ctl.append(swatch, hex);
+  } else if (slice.type === 'ramp') {
+    ctl.appendChild(rampControl(cardKey, slice, value));
   } else if (slice.type === 'number') {
     const input = el('input', { type: 'number', value, min: slice.min, max: slice.max, step: slice.step ?? 1 });
     input.addEventListener('input', () => {
@@ -3246,8 +3339,90 @@ function buildSliceRow(cardKey, slice) {
     ctl.appendChild(selectEl(opts, value, (v) => commit(v), { allowNone: false }));
   }
   row.append(el('label', { text: slice.t }), ctl);
+  row.dataset.slice = slice.k;
+  if (slice.type === 'ramp') row.classList.add('stack');
   if (slice.hint) row.title = slice.hint;
   return row;
+}
+
+/** Push a value the user did not type — a scheme's colours, or a mode forced by
+ *  one — back into the control that shows it. */
+function syncControl(cardKey, key) {
+  const row = $(`.card[data-card="${cardKey}"] .row[data-slice="${key}"]`);
+  if (!row) return;
+  const value = S()[cardKey][key];
+  const swatch = row.querySelector('input[type=color]');
+  if (swatch) {
+    swatch.value = value;
+    const hex = row.querySelector('input.hex');
+    if (hex) { hex.value = value; hex.classList.remove('bad'); }
+    return;
+  }
+  const field = row.querySelector('select, input[type=text], input[type=number]');
+  if (field) field.value = value;
+}
+
+/**
+ * Write a ColorBrewer scheme into a card's colour slots. The swatches stay the
+ * single source of truth for rendering — the scheme just fills them — so a
+ * palette can always be nudged by hand afterwards.
+ */
+function applyScheme(cardKey) {
+  const slice = CARD_BY_KEY[cardKey].slices.find((x) => x.type === 'ramp');
+  const name = slice && S()[cardKey][slice.k];
+  if (!name) return false;
+  const colors = schemeColors(name, slice.count());
+  if (!colors) return false;
+  colors.forEach((color, i) => {
+    const key = `color${i + 1}`;
+    if (!(key in state.settings[cardKey])) return;
+    state.settings[cardKey][key] = color;
+    syncControl(cardKey, key);
+  });
+  return true;
+}
+
+function rampControl(cardKey, slice, value) {
+  const wrap = el('div', { class: 'ramp-ctl' });
+  const select = el('select');
+  select.appendChild(el('option', { value: '', text: 'Custom — set each colour below' }));
+  const groups = { sequential: ['Sequential', CB_SEQUENTIAL], diverging: ['Diverging', CB_DIVERGING],
+    qualitative: ['Qualitative', CB_QUALITATIVE] };
+  for (const family of slice.families) {
+    const [label, names] = groups[family];
+    const group = el('optgroup', { label });
+    for (const name of names) group.appendChild(el('option', { value: name, text: name }));
+    select.appendChild(group);
+  }
+  select.value = value || '';
+
+  const preview = el('div', { class: 'ramp-preview' });
+  const drawPreview = () => {
+    clear(preview);
+    const colors = schemeColors(select.value, slice.count());
+    if (!colors) { preview.classList.add('empty'); return; }
+    preview.classList.remove('empty');
+    for (const c of colors) preview.appendChild(el('i', { style: `background:${c}` }));
+  };
+
+  select.addEventListener('change', () => {
+    pushUndo(`${cardKey}.${slice.k}`);
+    state.settings[cardKey][slice.k] = select.value;
+    // A scheme is only visible through the custom class colours, so choosing
+    // one implies that mode.
+    if (select.value && cardKey === 'choropleth' && S().choropleth.mode !== 'custom') {
+      state.settings.choropleth.mode = 'custom';
+      syncControl('choropleth', 'mode');
+    }
+    applyScheme(cardKey);
+    drawPreview();
+    refreshSliceVisibility();
+    liveRender();
+    saveLocal();
+  });
+  wrap.append(select, preview);
+  drawPreview();
+  return wrap;
 }
 
 function refreshSliceVisibility() {

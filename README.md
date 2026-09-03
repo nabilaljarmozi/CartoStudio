@@ -21,11 +21,11 @@ To host your own: drop `index.html` on any static host — Netlify, GitHub Pages
 S3, a shared drive. There is no build step, no server, no account. Because the
 file is named `index.html`, a host serves it at the bare URL.
 
-The page pulls five small libraries from a CDN on first load — `d3-geo`,
-`d3-polygon`, `topojson-client`, `polylabel` and `papaparse` — plus `xlsx` and
-`jspdf` only if you use those features. Everything else is inline. A machine with
-no internet access will show a "could not load the map libraries" message instead
-of the map.
+The page pulls six small libraries from a CDN on first load — `d3-geo`,
+`d3-polygon`, `topojson-client`, `polylabel`, `papaparse` and
+`d3-scale-chromatic` — plus `xlsx` and `jspdf` only if you use those features.
+Everything else is inline. A machine with no internet access will show a "could
+not load the map libraries" message instead of the map.
 
 ## 30-second tour
 
@@ -154,6 +154,27 @@ Legends: choropleth (with an auto-appended *No data* swatch), bubble, glyph
 categories, admin levels and values. Legends that share a corner stack inside one
 rounded frame; the frame stacks vertically or horizontally. A latitude-aware
 scale bar snaps to round distances and dodges whichever legend shares its corner.
+
+## Colours
+
+Every colour control is a swatch plus a hex box. The swatch opens the operating
+system's picker; the hex box takes `#aabbcc`, the `#abc` shorthand, or a bare
+`aabbcc` with no hash, so a brand colour can be pasted straight in. A half-typed
+value is flagged and not applied, and leaving the field snaps it back to what is
+actually on the map.
+
+The choropleth and the pie / column overlay also carry a **ColorBrewer scheme**
+picker — all 35 schemes from [colorbrewer2.org](https://colorbrewer2.org),
+grouped into sequential, diverging and qualitative, with a preview strip of the
+palette as it will be used. Choosing one fills the class colours below it, so the
+palette stays editable afterwards; nudging any of those colours by hand switches
+the label back to *Custom*, because it is no longer that scheme.
+
+ColorBrewer publishes a separate palette for each class count rather than one
+long ramp to be sampled, so changing *Number of classes* re-derives the scheme at
+the new size. YlOrRd at five classes is `#ffffb2 #fecc5c #fd8d3c #f03b20 #bd0026`;
+at three it becomes `#ffeda0 #feb24c #f03b20`, not the first three of the five.
+The exact palettes come from `d3-scale-chromatic`, so they match the site.
 
 ## Export
 
