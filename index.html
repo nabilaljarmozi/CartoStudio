@@ -212,9 +212,27 @@ table.mini th{color:var(--ink-2);font-weight:600}
   font-size:11.5px;text-transform:lowercase;padding:0 5px}
 .ctl input.hex.bad{border-color:var(--danger);background:#fdf3f2}
 .ramp-ctl{display:flex;flex-direction:column;gap:5px;width:100%}
-.ramp-preview{display:flex;height:15px;border-radius:4px;overflow:hidden;border:1px solid var(--line)}
-.ramp-preview i{flex:1}
-.ramp-preview.empty{background:repeating-linear-gradient(45deg,#eef0f4,#eef0f4 4px,#e2e6ec 4px,#e2e6ec 8px)}
+.ramp-trigger{display:flex;align-items:center;gap:6px;width:100%;height:27px;padding:0 8px;
+  border:1px solid var(--line);border-radius:5px;background:var(--panel);text-align:left}
+.ramp-trigger:hover{border-color:var(--accent)}
+.ramp-trigger[aria-expanded="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.ramp-trigger .chev{display:flex;color:var(--ink-2)}
+.ramp-name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ramp-strip{display:flex;height:14px;flex:0 0 72px;width:72px;border-radius:3px;overflow:hidden;
+  border:1px solid var(--line)}
+.ramp-strip.wide{flex:1 1 auto;width:auto;height:16px}
+.ramp-strip i{flex:1;min-width:1px}
+.ramp-strip.empty{background:repeating-linear-gradient(45deg,#eef0f4,#eef0f4 4px,#e2e6ec 4px,#e2e6ec 8px)}
+.ramp-menu{border:1px solid var(--line);border-radius:6px;background:var(--panel);
+  max-height:262px;overflow:auto;padding:4px}
+.ramp-menu[hidden]{display:none}
+.ramp-group{padding:7px 6px 3px;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--ink-2);font-weight:600}
+.ramp-opt{display:flex;align-items:center;gap:8px;width:100%;padding:4px 6px;border:0;background:none;
+  border-radius:4px;text-align:left}
+.ramp-opt:hover{background:var(--accent-soft)}
+.ramp-opt[aria-selected="true"]{background:var(--accent-soft)}
+.ramp-opt[aria-selected="true"] .ramp-name{font-weight:600;color:var(--accent)}
 
 /* sheet picker */
 .sheet-list{display:flex;flex-direction:column;gap:6px}
@@ -659,7 +677,7 @@ const CARDS = [
     { k: 'mode', t: 'Colour mode', type: 'select', d: 'automatic',
       opts: [['automatic', 'Automatic ramp'], ['custom', 'Custom classes']],
       when: (s) => s.choropleth.classification !== 'categorical' },
-    { k: 'scheme', t: 'ColorBrewer scheme', type: 'ramp', d: '',
+    { k: 'scheme', t: 'Colour scheme', type: 'ramp', d: '',
       families: ['sequential', 'diverging', 'qualitative'],
       // Categorical fills every slot, since categories cycle through them;
       // a graduated ramp only needs one colour per class.
@@ -706,7 +724,7 @@ const CARDS = [
     { k: 'stroke', t: 'Stroke colour', type: 'color', d: '#ffffff' },
     { k: 'strokeWidth', t: 'Stroke width', type: 'number', d: 1, min: 0, max: 8, step: 0.25 },
     { k: 'opacity', t: 'Opacity', type: 'number', d: 0.9, min: 0, max: 1, step: 0.05 },
-    { k: 'scheme', t: 'ColorBrewer scheme', type: 'ramp', d: '',
+    { k: 'scheme', t: 'Colour scheme', type: 'ramp', d: '',
       families: ['qualitative', 'sequential', 'diverging'], count: () => 8 },
     { k: 'color1', t: 'Category 1', type: 'color', ramped: true, d: '#1f77b4' },
     { k: 'color2', t: 'Category 2', type: 'color', ramped: true, d: '#ff7f0e' },
@@ -3267,14 +3285,12 @@ function buildSliceRow(cardKey, slice) {
       if (ramp && state.settings[cardKey][ramp.k]) {
         state.settings[cardKey][ramp.k] = '';
         syncControl(cardKey, ramp.k);
-        const preview = $(`.card[data-card="${cardKey}"] .ramp-preview`);
-        if (preview) { clear(preview); preview.classList.add('empty'); }
       }
     }
     // A ColorBrewer ramp is defined per class count, so re-derive it when the
     // count changes instead of leaving colours from the old size.
     if (cardKey === 'choropleth' && (slice.k === 'classCount' || slice.k === 'classification')) {
-      applyScheme('choropleth');
+      if (applyScheme('choropleth')) syncControl('choropleth', 'scheme');
     }
     refreshSliceVisibility();
     if (slice.layer) {
@@ -3350,6 +3366,8 @@ function buildSliceRow(cardKey, slice) {
 function syncControl(cardKey, key) {
   const row = $(`.card[data-card="${cardKey}"] .row[data-slice="${key}"]`);
   if (!row) return;
+  const ramp = row.querySelector('.ramp-ctl');
+  if (ramp?.__redraw) { ramp.__redraw(); return; }
   const value = S()[cardKey][key];
   const swatch = row.querySelector('input[type=color]');
   if (swatch) {
@@ -3382,46 +3400,104 @@ function applyScheme(cardKey) {
   return true;
 }
 
+/**
+ * Scheme picker. A native <select> can only offer names, and a palette is not
+ * something you choose by name — so this is a listbox whose every row carries
+ * the palette it stands for, rendered at the class count in use. It expands in
+ * normal flow rather than floating, which keeps it from being clipped by the
+ * scrolling format panel.
+ */
 function rampControl(cardKey, slice, value) {
   const wrap = el('div', { class: 'ramp-ctl' });
-  const select = el('select');
-  select.appendChild(el('option', { value: '', text: 'Custom — set each colour below' }));
-  const groups = { sequential: ['Sequential', CB_SEQUENTIAL], diverging: ['Diverging', CB_DIVERGING],
-    qualitative: ['Qualitative', CB_QUALITATIVE] };
-  for (const family of slice.families) {
-    const [label, names] = groups[family];
-    const group = el('optgroup', { label });
-    for (const name of names) group.appendChild(el('option', { value: name, text: name }));
-    select.appendChild(group);
-  }
-  select.value = value || '';
+  const nameOf = (v) => v || 'Custom';
 
-  const preview = el('div', { class: 'ramp-preview' });
-  const drawPreview = () => {
-    clear(preview);
-    const colors = schemeColors(select.value, slice.count());
-    if (!colors) { preview.classList.add('empty'); return; }
-    preview.classList.remove('empty');
-    for (const c of colors) preview.appendChild(el('i', { style: `background:${c}` }));
+  const stripFor = (schemeName) => {
+    const strip = el('div', { class: 'ramp-strip' });
+    const colors = schemeColors(schemeName, slice.count());
+    if (!colors) strip.classList.add('empty');
+    else for (const c of colors) strip.appendChild(el('i', { style: `background:${c}` }));
+    return strip;
   };
 
-  select.addEventListener('change', () => {
+  const label = el('span', { class: 'ramp-name', text: nameOf(value) });
+  const trigger = el('button', { class: 'ramp-trigger', type: 'button', 'aria-haspopup': 'listbox',
+    'aria-expanded': 'false' }, label,
+    el('span', { class: 'chev', html: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" '
+      + 'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
+      + '<path d="m6 9 6 6 6-6"/></svg>' }));
+  let preview = stripFor(value);
+  preview.classList.add('wide');
+  const menu = el('div', { class: 'ramp-menu', role: 'listbox', hidden: true });
+
+  const redrawPreview = () => {
+    const next = stripFor(state.settings[cardKey][slice.k]);
+    next.classList.add('wide');
+    preview.replaceWith(next);
+    preview = next;
+    label.textContent = nameOf(state.settings[cardKey][slice.k]);
+  };
+
+  const choose = (schemeName) => {
     pushUndo(`${cardKey}.${slice.k}`);
-    state.settings[cardKey][slice.k] = select.value;
+    state.settings[cardKey][slice.k] = schemeName;
     // A scheme is only visible through the custom class colours, so choosing
     // one implies that mode.
-    if (select.value && cardKey === 'choropleth' && S().choropleth.mode !== 'custom') {
+    if (schemeName && cardKey === 'choropleth' && S().choropleth.mode !== 'custom') {
       state.settings.choropleth.mode = 'custom';
       syncControl('choropleth', 'mode');
     }
     applyScheme(cardKey);
-    drawPreview();
+    redrawPreview();
+    for (const opt of menu.querySelectorAll('.ramp-opt')) {
+      opt.setAttribute('aria-selected', String((opt.dataset.scheme || '') === schemeName));
+    }
+    close();
     refreshSliceVisibility();
     liveRender();
     saveLocal();
+  };
+
+  // 36 palettes is ~300 swatches per card; build them the first time the list
+  // is actually opened rather than on every panel rebuild.
+  let built = false;
+  const build = () => {
+    if (built) return;
+    built = true;
+    const current = state.settings[cardKey][slice.k] || '';
+    const addOption = (schemeName, text) => {
+      const opt = el('button', { class: 'ramp-opt', type: 'button', role: 'option',
+        'data-scheme': schemeName, 'aria-selected': String(schemeName === current) },
+        stripFor(schemeName), el('span', { class: 'ramp-name', text }));
+      opt.addEventListener('click', () => choose(schemeName));
+      menu.appendChild(opt);
+    };
+    addOption('', 'Custom — set each colour below');
+    const families = { sequential: ['Sequential', CB_SEQUENTIAL], diverging: ['Diverging', CB_DIVERGING],
+      qualitative: ['Qualitative', CB_QUALITATIVE] };
+    for (const family of slice.families) {
+      const [groupLabel, names] = families[family];
+      menu.appendChild(el('div', { class: 'ramp-group', text: groupLabel }));
+      for (const schemeName of names) addOption(schemeName, schemeName);
+    }
+  };
+
+  const close = () => { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); };
+  const open = () => {
+    build();
+    for (const other of $$('.ramp-menu')) if (other !== menu) other.hidden = true;
+    menu.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    menu.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  };
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.hidden ? open() : close();
   });
-  wrap.append(select, preview);
-  drawPreview();
+  menu.addEventListener('click', (e) => e.stopPropagation());
+  menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') { close(); trigger.focus(); } });
+
+  wrap.append(trigger, preview, menu);
+  wrap.__redraw = redrawPreview;
   return wrap;
 }
 
@@ -4087,7 +4163,11 @@ function wireUi() {
       ]);
     }
   });
-  document.addEventListener('click', () => { for (const m of $$('.menu')) m.classList.remove('open'); });
+  document.addEventListener('click', () => {
+    for (const m of $$('.menu')) m.classList.remove('open');
+    for (const m of $$('.ramp-menu')) m.hidden = true;
+    for (const t of $$('.ramp-trigger')) t.setAttribute('aria-expanded', 'false');
+  });
   $('#fileProject').addEventListener('change', async (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';

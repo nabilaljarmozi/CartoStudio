@@ -163,12 +163,14 @@ system's picker; the hex box takes `#aabbcc`, the `#abc` shorthand, or a bare
 value is flagged and not applied, and leaving the field snaps it back to what is
 actually on the map.
 
-The choropleth and the pie / column overlay also carry a **ColorBrewer scheme**
-picker — all 35 schemes from [colorbrewer2.org](https://colorbrewer2.org),
-grouped into sequential, diverging and qualitative, with a preview strip of the
-palette as it will be used. Choosing one fills the class colours below it, so the
-palette stays editable afterwards; nudging any of those colours by hand switches
-the label back to *Custom*, because it is no longer that scheme.
+The choropleth and the pie / column overlay also carry a **Colour scheme**
+picker holding all 35 palettes from [colorbrewer2.org](https://colorbrewer2.org),
+grouped into sequential, diverging and qualitative. Every row in the list shows
+the palette itself, drawn at the class count in use — a scheme is not something
+you can pick by name — and the current choice is previewed full width beneath the
+control. Choosing one fills the class colours below it, so the palette stays
+editable afterwards; nudging any of those colours by hand switches the label back
+to *Custom*, because it is no longer that scheme.
 
 ColorBrewer publishes a separate palette for each class count rather than one
 long ramp to be sampled, so changing *Number of classes* re-derives the scheme at
