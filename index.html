@@ -669,6 +669,32 @@ function labelSlices(defs) {
   ];
 }
 
+/**
+ * Insert the "label only above a value" controls just under Show, where they
+ * are found rather than buried beneath two dozen typography settings.
+ */
+function withThresholdSlices(slices) {
+  const out = slices.slice();
+  out.splice(1, 0,
+    { k: 'minValueShow', t: 'Only label above a value', type: 'toggle', d: false,
+      hint: 'Hides Admin 2 labels whose choropleth value does not clear the threshold.' },
+    { k: 'minValue', t: 'Show when value >', type: 'number', d: 0, step: 'any',
+      min: -1e12, max: 1e12, when: (s) => s.localityLabels.minValueShow },
+    { k: '_minValueNote', type: 'note',
+      text: () => {
+        if (!state.data.roles.colorValue) {
+          return 'No choropleth value is bound, so no label can clear the threshold.';
+        }
+        const stats = state.labelThreshold;
+        if (!stats || !stats.total) return '';
+        return stats.hidden
+          ? `${stats.hidden} of ${stats.total} labels hidden by the threshold.`
+          : `All ${stats.total} labels clear the threshold.`;
+      },
+      when: (s) => s.localityLabels.minValueShow });
+  return out;
+}
+
 /** Legend cards share the same five slices. */
 function legendSlices(defPos, defShow, titlePh, extraOrient) {
   return [
@@ -821,7 +847,10 @@ const CARDS = [
 
   { key: 'stateLabels', title: 'Admin 1 labels', slices: labelSlices({ show: true, fontSize: 12, bold: true }) },
   { key: 'localityLabels', title: 'Admin 2 labels — default view',
-    slices: labelSlices({ show: true, fontSize: 9, haloWidth: 1.5 }) },
+    // The whole-country Admin 2 view is where labels crowd; a threshold keeps
+    // only the areas worth naming. The drill card has no equivalent, since a
+    // single state's districts have room for all of them.
+    slices: withThresholdSlices(labelSlices({ show: true, fontSize: 9, haloWidth: 1.5 })) },
   { key: 'drillLabels', title: 'Admin 2 labels — drill view',
     slices: labelSlices({ show: true, fontSize: 10, haloWidth: 1.5 }) },
 
@@ -2624,8 +2653,17 @@ function render() {
     }
   }
 
+  state.labelThreshold = null;
   if (view === 'admin2' && localityCard.show && adm2Visible.length) {
-    const labels = adm2Visible.map((f) => labelDatum(f, 'ADM2_PCODE', 'ADM2_EN', areas));
+    let labels = adm2Visible.map((f) => labelDatum(f, 'ADM2_PCODE', 'ADM2_EN', areas));
+    // Threshold applies to the whole-country Admin 2 view only — inside a drill
+    // the drill card is in charge and every district is worth naming.
+    if (!state.drill && st.localityLabels.minValueShow) {
+      const floor = Number(st.localityLabels.minValue) || 0;
+      const kept = labels.filter((l) => l.value != null && l.value > floor);
+      state.labelThreshold = { total: labels.length, hidden: labels.length - kept.length };
+      labels = kept;
+    }
     renderLabels(L.adm2Label, projection, path, labels, localityCard, {
       overrides: overlayAnchors
         ? buildOverlayLabelOverrides(overlayAnchors.anchors, overlayAnchors.placement, localityCard.fontSize, overlayAnchors.kind)

@@ -164,6 +164,14 @@ with a pinhole. The toast after each upload reports how many rings were flipped.
    shrink → hide), spread characters, and anchors from the area-weighted
    centroid with a polylabel fallback for concave shapes.
 
+The whole-country Admin 2 view is where labels crowd, so that card alone carries
+**Only label above a value**: give it a threshold and only areas whose choropleth
+value exceeds it are named. The card reports how many labels the threshold is
+hiding, and says so plainly when no choropleth column is bound — every value is
+then missing, so nothing could clear any threshold. The drill card has no
+equivalent: one state's districts have room for all their names, so drilling in
+shows every label regardless of the threshold.
+
 Legends: choropleth (with an auto-appended *No data* swatch), bubble, glyph
 categories, admin levels and values. Legends that share a corner stack inside one
 rounded frame; the frame stacks vertically or horizontally. A latitude-aware
