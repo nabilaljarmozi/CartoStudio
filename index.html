@@ -207,6 +207,15 @@ table.mini th{color:var(--ink-2);font-weight:600}
 .modal footer{padding:11px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:var(--panel-2)}
 .modal .row > .ctl{flex:0 0 180px}
 
+/* sheet picker */
+.sheet-list{display:flex;flex-direction:column;gap:6px}
+.sheet-pick{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;
+  border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);padding:9px 11px;text-align:left}
+.sheet-pick:hover:not([disabled]){border-color:var(--accent);background:var(--accent-soft)}
+.sheet-pick b{font-size:13px}
+.sheet-pick span{font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.sheet-pick[disabled]{opacity:.5;cursor:not-allowed}
+
 /* share dialog */
 .share-out{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
   word-break:break-all;background:var(--panel-2)}
@@ -949,15 +958,56 @@ function parseDelimitedText(text, filename) {
   return { rows: res.data, columns };
 }
 
+/**
+ * Ask which sheet to read. Sizes come from each sheet's declared range rather
+ * than from parsing it, so naming a sheet costs nothing on a large workbook —
+ * only the chosen one is materialised.
+ */
+function pickSheet(fileName, sheets) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v) => { if (!settled) { settled = true; resolve(v); } };
+    const list = el('div', { class: 'sheet-list' });
+    for (const sheet of sheets) {
+      const empty = sheet.rows <= 0;
+      list.appendChild(el('button', { class: 'sheet-pick', disabled: empty,
+        onclick: () => { finish(sheet.name); closeModal(); } },
+        el('b', { text: sheet.name }),
+        el('span', { text: empty ? 'empty'
+          : `${sheet.rows.toLocaleString()} row${sheet.rows === 1 ? '' : 's'} × ${sheet.cols} column${sheet.cols === 1 ? '' : 's'}` })));
+    }
+    openModal(`Which sheet from ${fileName}?`, [
+      el('p', { class: 'hint', text: 'This workbook has more than one sheet. Pick the one holding your '
+        + 'table — its first row is read as the header.' }),
+      list
+    ], [['Cancel', closeModal, false]], () => finish(null));
+  });
+}
+
 async function parseWorkbookFile(file) {
   const XLSX = await getXLSX();
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: 'array' });
-  const sheetName = wb.SheetNames[0];
-  if (!sheetName) throw new Error(`${file.name} has no sheets`);
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const names = wb.SheetNames || [];
+  if (!names.length) throw new Error(`${file.name} has no sheets`);
+
+  let sheetName = names[0];
+  if (names.length > 1) {
+    const sized = names.map((name) => {
+      const ws = wb.Sheets[name];
+      if (!ws || !ws['!ref']) return { name, rows: 0, cols: 0 };
+      const r = XLSX.utils.decode_range(ws['!ref']);
+      return { name, rows: Math.max(0, r.e.r - r.s.r), cols: r.e.c - r.s.c + 1 };
+    });
+    if (sized.every((x) => x.rows <= 0)) throw new Error(`Every sheet in ${file.name} is empty`);
+    sheetName = await pickSheet(file.name, sized);
+    if (!sheetName) return null;   // cancelled — leave the current map alone
+  }
+
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '', raw: false });
   if (!rows.length) throw new Error(`${file.name} → sheet "${sheetName}" is empty`);
-  return { rows, columns: Object.keys(rows[0]) };
+  // Name the sheet in the Data panel so it is obvious which one is loaded.
+  const label = names.length > 1 ? `${file.name} — ${sheetName}` : file.name;
+  return { rows, columns: Object.keys(rows[0]), label };
 }
 
 /** Best-effort first pass at the role bindings so a fresh upload already
@@ -2755,7 +2805,7 @@ function wireCanvasGestures() {
     for (const file of Array.from(e.dataTransfer.files || [])) {
       if (/\.(geojson|topojson|json)$/i.test(file.name)) {
         await loadGeometryFile(file, hasGeometry() ? 2 : 1);
-      } else if (/\.(csv|tsv|txt|xlsx|xls)$/i.test(file.name)) {
+      } else if (/\.(csv|tsv|txt|xlsx|xlsm|xlsb|xls)$/i.test(file.name)) {
         await loadDataFile(file);
       }
     }
@@ -2836,9 +2886,10 @@ async function loadGeometryFile(file, level) {
 async function loadDataFile(file) {
   try {
     let parsed;
-    if (/\.(xlsx|xls|xlsm)$/i.test(file.name)) parsed = await parseWorkbookFile(file);
+    if (/\.(xlsx|xlsm|xlsb|xls)$/i.test(file.name)) parsed = await parseWorkbookFile(file);
     else parsed = parseDelimitedText(await readFileText(file), file.name);
-    adoptData(parsed, file.name);
+    if (!parsed) return;   // the sheet picker was cancelled
+    adoptData(parsed, parsed.label || file.name);
   } catch (e) {
     toast(e.message || String(e), true);
   }
@@ -2936,7 +2987,7 @@ function buildDataPanel() {
   const gd = group('Data table', state.data.rows.length
     ? { text: `${state.data.rows.length} rows`, ok: true } : { text: 'optional' });
   if (!state.data.rows.length) {
-    gd.appendChild(fileButton('Upload CSV / TSV / XLSX', '.csv,.tsv,.txt,.xlsx,.xls', loadDataFile));
+    gd.appendChild(fileButton('Upload CSV / TSV / XLSX', '.csv,.tsv,.txt,.xlsx,.xlsm,.xlsb,.xls', loadDataFile));
     gd.appendChild(el('button', { class: 'tb-btn', style: 'width:100%;margin-top:6px;justify-content:center',
       text: 'Paste CSV / TSV text…', onclick: openPasteModal }));
   } else {
@@ -3259,7 +3310,9 @@ function applyTheme(name) {
 
 /* =============================================================== modal ===== */
 
-function openModal(title, bodyNodes, buttons) {
+let modalDismiss = null;
+function openModal(title, bodyNodes, buttons, onDismiss) {
+  modalDismiss = onDismiss || null;
   $('#modalTitle').textContent = title;
   const body = clear($('#modalBody'));
   for (const n of bodyNodes) body.appendChild(n);
@@ -3269,7 +3322,12 @@ function openModal(title, bodyNodes, buttons) {
   }
   $('#modalBack').classList.add('open');
 }
-const closeModal = () => $('#modalBack').classList.remove('open');
+const closeModal = () => {
+  $('#modalBack').classList.remove('open');
+  const dismissed = modalDismiss;
+  modalDismiss = null;
+  if (dismissed) dismissed();
+};
 
 /* ============================================================== export ===== */
 

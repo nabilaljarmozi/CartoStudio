@@ -64,6 +64,14 @@ cannot be attributed to a state and drill-down will skip them.
 
 ### 2. Data side — field bindings
 
+Tables come in as CSV, TSV, XLSX (also `.xlsm` / `.xlsb` / `.xls`) or pasted
+text. A workbook with more than one sheet asks which sheet to read, listing each
+one with its size so `Sheet1 / Data / Notes` is a real choice; empty sheets are
+shown but cannot be picked. Sizes come from each sheet's declared range rather
+than from parsing it, so naming a sheet costs nothing on a large workbook — only
+the one you choose is read. A single-sheet workbook loads without asking, and
+the Data panel labels the file with the sheet it came from.
+
 Each column is assigned a role:
 
 | Role | Meaning |
