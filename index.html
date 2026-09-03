@@ -138,6 +138,7 @@ h1,h2,h3,h4{margin:0;font-weight:600}
 /* rows */
 .row{display:flex;align-items:center;gap:8px;padding:4px 0;min-height:28px}
 .row.hide{display:none}
+.row.dim{opacity:.5}
 .row.note{padding:0 0 4px}
 .row.note .hint{margin:0}
 .row > label{flex:1;color:var(--ink-2);font-size:12.2px;min-width:0}
@@ -679,7 +680,7 @@ function withThresholdSlices(slices) {
     { k: 'minValueShow', t: 'Only label above a value', type: 'toggle', d: false,
       hint: 'Hides Admin 2 labels whose choropleth value does not clear the threshold.' },
     { k: 'minValue', t: 'Show when value >', type: 'number', d: 0, step: 'any',
-      min: -1e12, max: 1e12, when: (s) => s.localityLabels.minValueShow },
+      min: -1e12, max: 1e12, dim: (s) => !s.localityLabels.minValueShow },
     { k: '_minValueNote', type: 'note',
       text: () => {
         if (!state.data.roles.colorValue) {
@@ -3609,6 +3610,7 @@ function buildSliceRow(cardKey, slice) {
   }
   row.append(el('label', { text: slice.t }), ctl);
   row.dataset.slice = slice.k;
+  row.__dim = slice.dim;
   if (slice.type === 'ramp') row.classList.add('stack');
   if (slice.hint) row.title = slice.hint;
   return row;
@@ -3776,6 +3778,14 @@ function refreshSliceVisibility() {
       visible = visible && !!text;
     }
     row.classList.toggle('hide', !visible);
+    // A dimmed row stays on show so the control is discoverable, but reads as
+    // inert until whatever switches it on is switched on.
+    if (row.__dim) {
+      let dim = false;
+      try { dim = !!row.__dim(S()); } catch (e) { dim = false; }
+      row.classList.toggle('dim', dim);
+      for (const field of row.querySelectorAll('input, select, button')) field.disabled = dim;
+    }
   }
 }
 
